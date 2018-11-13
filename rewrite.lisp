@@ -4176,7 +4176,8 @@
          (t (mv term ttree)))))))
 
 (defun rewrite-solidify-rec (bound term type-alist obj geneqv ens wrld ttree
-                                   pot-lst pt)
+                                   ;; DAG - support for type-set backchain limits
+                                   pot-lst pt dag-backchain-limit)
   (declare (type (unsigned-byte 29) bound))
   (cond
    ((quotep term)
@@ -4292,14 +4293,19 @@
                 (declare (type (unsigned-byte 29) new-bound))
                 (rewrite-solidify-rec new-bound (fargn eterm 2) type-alist
                                       obj geneqv ens wrld ttree
-                                      pot-lst pt)))
+                                      ;; DAG - support for type-set backchain limits
+                                      pot-lst pt dag-backchain-limit)))
              (t (mv-let (ts ts-ttree)
 
 ; See the comment just after rewrite-solidify for some historical waffling.
 
                         (cond ((not (eq obj '?))
-                               (type-set term nil t type-alist
-                                         ens wrld nil pot-lst pt))
+                               (type-set-only term nil t type-alist
+                                              ens wrld nil pot-lst pt 
+                                              ;; DAG - use the -only interface to minimize type reasoning effort
+                                              ;; based on the objective
+                                              (objective-to-only obj)
+                                              dag-backchain-limit))
                               (t (assoc-type-alist term type-alist wrld)))
                         (if (null ts)
                             (mv term ttree)
@@ -4314,9 +4320,10 @@
   100)
 
 (defun rewrite-solidify (term type-alist obj geneqv ens wrld ttree
-                               pot-lst pt)
+                              ;; DAG - support for type-set backchain limits
+                               pot-lst pt dag-backchain-limit)
   (rewrite-solidify-rec *rewrite-equiv-solidify-iteration-bound* term
-                        type-alist obj geneqv ens wrld ttree pot-lst pt))
+                        type-alist obj geneqv ens wrld ttree pot-lst pt dag-backchain-limit))
 
 ; Comment on Historical Waffling over Calling Type-Set in Rewrite-Solidify
 ;
@@ -4405,7 +4412,8 @@
            (mv test ttree))
           ((equal left *t*)
            (mv-let (ts ts-ttree)
-             (type-set test ok-to-force nil type-alist ens wrld ttree nil nil)
+             ;; DAG - minimize type-set effort
+             (type-set-only test ok-to-force nil type-alist ens wrld ttree nil nil (ts-complement *ts-boolean*) (backchain-limit wrld :ts))
              (cond ((ts-subsetp ts *ts-boolean*)
                     (mv test ts-ttree))
                    (t (rewrite-if11 (mcons-term* 'if test left right)
@@ -11397,7 +11405,9 @@
                                        :current-enabled-structure)
                                wrld ttree
                                simplify-clause-pot-lst
-                               (access rewrite-constant rcnst :pt))))
+                               (access rewrite-constant rcnst :pt)
+                               ;; DAG - support for type-set backchain limits
+                               backchain-limit)))
            (t
             (let ((fn (ffn-symb term)))
               (cond
@@ -11546,7 +11556,9 @@
                                      :current-enabled-structure)
                              wrld ttree
                              simplify-clause-pot-lst
-                             (access rewrite-constant rcnst :pt))
+                             (access rewrite-constant rcnst :pt)
+                             ;; DAG - support for type-set backchain limits
+                             backchain-limit)
            (cond ((or (eq obj '?)
 
 ; Keep the next four conditions in sync with those in rewrite-with-lemmas.
@@ -12310,14 +12322,24 @@
                                   (forcep (and forcep1 force-flg)))
                              (mv-let
                               (knownp nilp nilp-ttree)
-                              (known-whether-nil
+                              ;; DAG - use the objective interface to minimize type reasoning.
+                              (known-whether-nil-obj
                                inst-hyp type-alist
                                (access rewrite-constant rcnst
                                        :current-enabled-structure)
                                force-flg
                                nil ; dwp
                                wrld
-                               ttree)
+                               ttree
+                               ;; DAG - we *could* be smarter here and
+                               ;; hit it again if obj="t" failed to
+                               ;; satisfy it .. that might help folks
+                               ;; who like to "force" type
+                               ;; prescription hyps as a matter of
+                               ;; course.
+                               (if forcep1 '? t) ;; objective
+                               backchain-limit
+                               )
                               (cond
                                (knownp
                                 (cond
@@ -13611,7 +13633,9 @@
                                        :current-enabled-structure)
                                wrld ttree
                                simplify-clause-pot-lst
-                               (access rewrite-constant rcnst :pt))))
+                               (access rewrite-constant rcnst :pt)
+                               ;; DAG - support for type-set backchain limits
+                               backchain-limit)))
            ((null rule) ; i.e., (flambdap fn)
             (cond
              ((and (not (recursive-fn-on-fnstackp fnstack))
@@ -13625,7 +13649,9 @@
                                          :current-enabled-structure)
                                  wrld ttree
                                  simplify-clause-pot-lst
-                                 (access rewrite-constant rcnst :pt))))
+                                 (access rewrite-constant rcnst :pt)
+                                 ;; DAG - support for type-set backchain limits
+                                 backchain-limit)))
              (t
               (sl-let
                (rewritten-body ttree1)
@@ -13657,7 +13683,9 @@
                                     wrld
                                     (accumulate-rw-cache t ttree1 ttree)
                                     simplify-clause-pot-lst
-                                    (access rewrite-constant rcnst :pt))))
+                                    (access rewrite-constant rcnst :pt)
+                                    ;; DAG - support for type-set backchain limits
+                                    backchain-limit)))
                 (t (mv step-limit rewritten-body ttree1)))))))
            (t
             (let* ((new-fnstack (cons (or recursivep fn) fnstack))
@@ -13707,7 +13735,9 @@
                                         wrld ttree
                                         simplify-clause-pot-lst
                                         (access rewrite-constant rcnst
-                                                :pt)))))
+                                                :pt)
+                                        ;; DAG - support for type-set backchain limits
+                                        backchain-limit))))
                    (t
                     (sl-let
                      (relieve-hyps-ans failure-reason unify-subst ttree1)
@@ -13777,7 +13807,9 @@
                                   wrld
                                   (accumulate-rw-cache t ttree1 ttree)
                                   simplify-clause-pot-lst
-                                  (access rewrite-constant rcnst :pt)))))
+                                  (access rewrite-constant rcnst :pt)
+                                  ;; DAG - support for type-set backchain limits
+                                  backchain-limit))))
                               (t (prog2$
                                   (brkpt2 t nil unify-subst gstack
                                           rewritten-body ttree1 rcnst state)
@@ -13914,7 +13946,9 @@
                                   (accumulate-rw-cache t ttree1 ttree)
                                   simplify-clause-pot-lst
                                   (access rewrite-constant rcnst
-                                          :pt))))))))
+                                          :pt)
+                                  ;; DAG - support for type-set backchain limits
+                                  backchain-limit)))))))
                         :conc
                         (access rewrite-rule rule :hyps)))
                       (t (prog2$
@@ -13930,7 +13964,9 @@
                                               t ttree1 ttree)
                                              simplify-clause-pot-lst
                                              (access rewrite-constant rcnst
-                                                     :pt)))))))))))
+                                                     :pt)
+                                             ;; DAG - support for type-set backchain limits
+                                             backchain-limit))))))))))
                 (t (prepend-step-limit
                     2
                     (rewrite-solidify term type-alist obj geneqv
@@ -13939,7 +13975,9 @@
                                       wrld ttree
                                       simplify-clause-pot-lst
                                       (access rewrite-constant rcnst
-                                              :pt))))))))))))
+                                              :pt)
+                                      ;; DAG - support for type-set backchain limits
+                                      backchain-limit)))))))))))
 
 (defun rewrite-with-lemmas (term ; &extra formals
                             rdepth step-limit
@@ -14084,7 +14122,9 @@
                                        wrld ttree
                                        simplify-clause-pot-lst
                                        (access rewrite-constant rcnst
-                                               :pt))))))))))))))))
+                                               :pt)
+                                       ;; DAG - support for type-set backchain limits
+                                       backchain-limit)))))))))))))))
 
 (defun rewrite-linear-term (term alist ; &extra formals
                                  rdepth step-limit

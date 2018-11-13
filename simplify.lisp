@@ -715,7 +715,8 @@
 ; A forward chaining rule is
 
 (defrec forward-chaining-rule
-  ((rune . nume) trigger hyps concls . match-free) nil)
+  ;; DAG - add backchain-limit-lst support to :forward-chaining-rules
+  ((rune . nume) trigger (hyps . backchain-limit-lst) concls . match-free) nil)
 
 ; One of the main inefficiencies in our earlier forward chaining schemes
 ; was that if a rule began to fire but misfired because some hyp could
@@ -725,8 +726,12 @@
 ; attempt to fire a rule and resume it later.
 
 (defrec fc-activation
-  (inst-hyp (hyps . ttree)
-            unify-subst inst-trigger . rule) t)
+  ;; DAG - add backchain-limit support to activations .. a limit
+  ;; for the inst-hyp and a limit-list for the hyps.
+  ((inst-hyp . bc-limit) (hyps . ttree)
+            unify-subst 
+            backchain-limit-lst
+            inst-trigger . rule) t)
 
 ; Warning:  Despite the name, inst-hyp is not necessarily a term!
 ; See below.
@@ -837,7 +842,8 @@
 ; and ttree fields in variables and only put them back into the activation
 ; record when we decide to suspend it.  They may or may not have changed.
 
-(defun suspend-fc-activation (act inst-hyp hyps unify-subst ttree)
+;; DAG - maintain mapping between hyps and limits
+(defun suspend-fc-activation (act inst-hyp bc-limit hyps backchain-limit-lst unify-subst ttree)
 
 ; This function is equivalent to
 
@@ -872,27 +878,39 @@
 ; record.
 
   (cond ((equal unify-subst (access fc-activation act :unify-subst))
-
+         ;; DAG - we expect changes in backchain-limit-lst to be a subset
+         ;; of those in hyps.
          (cond ((and (equal hyps (access fc-activation act :hyps))
                      (equal ttree (access fc-activation act :ttree)))
                 (cond ((equal inst-hyp (access fc-activation act :inst-hyp))
 ; Case (a) -- 0 conses
                        act)
                       (t
+;; DAG - cons count may be off by one
 ; Case (c) -- 1 cons
                        (change fc-activation act
-                               :inst-hyp inst-hyp))))
+                               :inst-hyp inst-hyp
+                               ;; DAG - maintain mapping between hyps and limits
+                               :bc-limit bc-limit))))
                (t
+;; DAG - cons count may be off by one
 ; Case (b) -- 3 conses
+
+                ;; DAG - maintain mapping between hyps and limits
                 (change fc-activation act
                         :inst-hyp inst-hyp
+                        :bc-limit bc-limit
                         :hyps hyps
+                        :backchain-limit-lst backchain-limit-lst
                         :ttree ttree))))
         (t
+;; DAG - cons count may be off by two
 ; Otherwise -- 4 conses
          (change fc-activation act
                  :inst-hyp inst-hyp
+                 :bc-limit bc-limit
                  :hyps hyps
+                 :backchain-limit-lst backchain-limit-lst
                  :unify-subst unify-subst
                  :ttree ttree))))
 
@@ -1017,12 +1035,19 @@
 
                  (cond ((null unify-ans) nil)
                        (t (let ((rule-hyps
-                                 (access forward-chaining-rule rule :hyps)))
+                                 (access forward-chaining-rule rule :hyps))
+                                ;; DAG - use backchain-limit-lst from the :forward-chaining rule
+                                (backchain-limit-lst
+                                 (access forward-chaining-rule rule :backchain-limit-lst)))
                             (make fc-activation
                                   :inst-hyp *t*
+                                  ;; DAG - initial limit of nil
+                                  :bc-limit nil
                                   :hyps rule-hyps
                                   :ttree ttree
                                   :unify-subst unify-subst
+                                  ;; DAG - store backchain-limit-lst here
+                                  :backchain-limit-lst backchain-limit-lst
                                   :inst-trigger term
                                   :rule rule))))))))
 
@@ -2051,7 +2076,8 @@
 ; sites.  We call this ``filtering'' because we only move the objects that
 ; satisfy the criteria.
 
-(defun filter-satisfying-virtual-fc-activation (act0 inst-hyp hyps unify-subst ttree)
+;; DAG - maintain mapping between hyps and limits
+(defun filter-satisfying-virtual-fc-activation (act0 inst-hyp bc-limit hyps backchain-limit-lst unify-subst ttree)
 
 ; This is the function that adds an activation to the
 ; :blocked-false-satisfying-activations, aka site (1), of the current
@@ -2085,7 +2111,8 @@
                  (calls-alist (cdr (assoc-eq :FORWARD-CHAIN-CALLS data)))
                  (k (car (car calls-alist)))
                  (call-alist (cdr (car calls-alist)))
-                 (act (suspend-fc-activation act0 inst-hyp hyps
+                 ;; DAG - maintain mapping between hyps and limits
+                 (act (suspend-fc-activation act0 inst-hyp bc-limit hyps backchain-limit-lst
                                              unify-subst ttree)))
             (set-wormhole-data
              whs
@@ -2645,8 +2672,9 @@
 
 (mutual-recursion
 
+ ;; DAG - maintain mapping between hyps and limits
 (defun advance-fc-activation1
-  (act0 inst-hyp hyps unify-subst ttree                       ; key args
+  (act0 inst-hyp bc-limit hyps backchain-limit-lst unify-subst ttree                       ; key args
          fc-round type-alist ens force-flg wrld state oncep-override   ; contextual args
          suspensions fcd-lst)                                 ; answers
 
@@ -2698,7 +2726,8 @@
 ; if this hyp is to be forced or split upon we don't also suspend it.
 
                   (advance-fc-activation3
-                   act0 (cdr hyps) new-unify-subst-list new-ttree-list
+                   ;; DAG - maintain mapping between hyps and limits
+                   act0 (cdr hyps) (cdr backchain-limit-lst) new-unify-subst-list new-ttree-list
                    fc-round type-alist ens force-flg wrld state oncep-override
                    (if (or oncep1 (and forcer-fn force-flg))
                        suspensions
@@ -2708,7 +2737,10 @@
                                      forcer-fn
                                      (append new-keys-seen
                                              last-keys-seen))
+                              ;; DAG - maintain mapping between hyps and limits
+                              bc-limit
                               hyps
+                              backchain-limit-lst
                               unify-subst
                               ttree)
                              suspensions))
@@ -2738,7 +2770,8 @@
 ; Force-assumption always returns an unchanged force-flg which we just ignore.
                             (declare (ignore new-force-flg))
                             (advance-fc-activation2
-                             act0 (cdr hyps) unify-subst ttree
+                             ;; DAG - maintain mapping between hyps and limits
+                             act0 (cdr hyps) (cdr backchain-limit-lst) unify-subst ttree
                              fc-round type-alist ens force-flg wrld state
                              oncep-override
                              suspensions
@@ -2755,7 +2788,10 @@
                                     forcer-fn
                                     (append new-keys-seen
                                             last-keys-seen))
+                             ;; DAG - maintain mapping between hyps and limits
+                             bc-limit
                              hyps
+                             backchain-limit-lst
                              unify-subst
                              ttree)
                             suspensions)
@@ -2770,8 +2806,10 @@
 
     (mv-let
      (ts ttree1)
-     (type-set inst-hyp force-flg nil type-alist ens wrld nil
-                      nil nil)
+     ;; DAG - avoid working too hard to falsify hyp and use our
+     ;; backchain limit
+     (type-set-only inst-hyp force-flg nil type-alist ens wrld nil
+                         nil nil *ts-nil* bc-limit)
      (cond
       ((ts= ts *ts-nil*)
 
@@ -2780,7 +2818,8 @@
 
        (prog2$
         (filter-satisfying-virtual-fc-activation ; (FC Report)
-         act0 inst-hyp hyps unify-subst ttree)
+         ;; DAG - maintain mapping between hyps and limits
+         act0 inst-hyp bc-limit hyps  backchain-limit-lst unify-subst ttree)
         (mv suspensions
             fcd-lst)))
       ((ts-intersectp ts *ts-nil*)
@@ -2790,7 +2829,8 @@
 ; changes -- but we're in recursion, so who knows?
 ; Suspend-fc-activation will check if anything changed.
 
-       (mv (cons (suspend-fc-activation act0 inst-hyp hyps
+       ;; DAG - maintain mapping between hyps and limits
+       (mv (cons (suspend-fc-activation act0 inst-hyp bc-limit hyps backchain-limit-lst
                                         unify-subst ttree)
                  suspensions)
            fcd-lst))
@@ -2799,12 +2839,14 @@
 ; Finally!  We're past inst-hyp and begin to work our way down hyps.
 
        (advance-fc-activation2
-        act0 hyps unify-subst (cons-tag-trees ttree1 ttree)
+       ;; DAG - maintain mapping between hyps and limits
+        act0 hyps backchain-limit-lst unify-subst (cons-tag-trees ttree1 ttree)
         fc-round type-alist ens force-flg wrld state oncep-override
         suspensions fcd-lst)))))))
 
+;; DAG - maintain mapping between hyps and limits
 (defun advance-fc-activation2
-  (act0 hyps unify-subst ttree                               ; key args
+  (act0 hyps backchain-limit-lst unify-subst ttree                               ; key args
         fc-round type-alist ens force-flg wrld state oncep-override   ; contextual args
         suspensions fcd-lst)                                 ; answers
 
@@ -2836,7 +2878,10 @@
                          (or (eq (ffn-symb (car hyps)) 'force)
                              (eq (ffn-symb (car hyps)) 'case-split))))
            (forcer-fn (and forcep1 (ffn-symb (car hyps))))
-           (hyp (if forcep1 (fargn (car hyps) 1) (car hyps))))
+           ;; DAG - maintain mapping between hyps and limits
+           (hyp (if forcep1 (fargn (car hyps) 1) (car hyps)))
+           (bc-limit (car backchain-limit-lst))
+           )
       (cond
        ((free-varsp hyp unify-subst)
 
@@ -2849,7 +2894,10 @@
                  '(:FC-FREE-VARS FORCE . nil)
                  '(:FC-FREE-VARS CASE-SPLIT . nil))
              '(:FC-FREE-VARS nil . nil))
+         ;; DAG -- I *think* this is the right thing to do here to maintain our mapping ..
+         nil
          (cons hyp (cdr hyps))
+         backchain-limit-lst
          unify-subst
          ttree
          fc-round type-alist ens force-flg wrld state oncep-override
@@ -2863,8 +2911,10 @@
 
         (let ((inst-hyp (sublis-var unify-subst hyp)))
           (mv-let (ts ttree1)
-                  (type-set inst-hyp force-flg nil type-alist ens wrld nil
-                            nil nil)
+            ;; DAG - avoid working too hard to falsify hyp and use our
+            ;; bachain limit
+            (type-set-only inst-hyp force-flg nil type-alist ens wrld nil
+                           nil nil *ts-nil* bc-limit)
 
 ; Note that ttree1 is the ttree associated with the type-set computation
 ; and that it does not include ttree.  If we use the type-set
@@ -2876,7 +2926,8 @@
 ; abandon this activation.
                     (prog2$
                      (filter-satisfying-virtual-fc-activation ; (FC Report)
-                      act0 inst-hyp hyps unify-subst ttree)
+                      ;; DAG - maintain mapping between hyps and limits
+                      act0 inst-hyp bc-limit hyps backchain-limit-lst unify-subst ttree)
                      (mv suspensions
                          fcd-lst)))
                     ((ts-intersectp ts *ts-nil*)
@@ -2937,7 +2988,8 @@
 ; split upon.  So we did that and the result is in ttree.  Therefore, we
 ; just move on.
                              (advance-fc-activation2
-                              act0 (cdr hyps) unify-subst ttree
+                              ;; DAG - maintain mapping between hyps and limits
+                              act0 (cdr hyps) (cdr backchain-limit-lst) unify-subst ttree
                               fc-round type-alist ens force-flg wrld state oncep-override
                               suspensions fcd-lst))
                             (t
@@ -2951,7 +3003,10 @@
                              (mv (cons (suspend-fc-activation
                                         act0
                                         inst-hyp
+                                        ;; DAG - maintain mapping between hyps and limits
+                                        bc-limit
                                         (cdr hyps)
+                                        (cdr backchain-limit-lst)
                                         unify-subst
                                         ttree)
                                        suspensions)
@@ -2962,7 +3017,8 @@
 ; ttree2) plus the original one.
 
                           (advance-fc-activation2
-                           act0 (cdr hyps) unify-subst
+                           ;; DAG - maintain mapping between hyps and limits
+                           act0 (cdr hyps) (cdr backchain-limit-lst) unify-subst
                            (cons-tag-trees ttree2 ttree)
                            fc-round type-alist ens force-flg wrld state oncep-override
                            suspensions fcd-lst))
@@ -2973,7 +3029,8 @@
 
                           (prog2$
                            (filter-satisfying-virtual-fc-activation ; (FC Report)
-                            act0 inst-hyp hyps unify-subst ttree)
+                            ;; DAG - maintain mapping between hyps and limits
+                            act0 inst-hyp bc-limit hyps backchain-limit-lst unify-subst ttree)
                            (mv suspensions
                                fcd-lst))))))
                       (t
@@ -3005,7 +3062,8 @@
 ; Inst-hyp has been forced.  So just move on.
 
                           (advance-fc-activation2
-                           act0 (cdr hyps) unify-subst ttree
+                           ;; DAG - maintain mapping between hyps and limits
+                           act0 (cdr hyps) (cdr backchain-limit-lst) unify-subst ttree
                            fc-round type-alist ens force-flg wrld state oncep-override
                            suspensions fcd-lst))
                          (t
@@ -3019,7 +3077,10 @@
                           (mv (cons (suspend-fc-activation
                                      act0
                                      inst-hyp
+                                     ;; DAG - maintain mapping between hyps and limits
+                                     bc-limit
                                      (cdr hyps)
+                                     (cdr backchain-limit-lst)
                                      unify-subst
                                      ttree)
                                     suspensions)
@@ -3030,13 +3091,15 @@
 ; as we move on.
 
                      (advance-fc-activation2
-                      act0 (cdr hyps) unify-subst
+                      ;; DAG - maintain mapping between hyps and limits
+                      act0 (cdr hyps) (cdr backchain-limit-lst) unify-subst
                       (cons-tag-trees ttree1 ttree)
                       fc-round type-alist ens force-flg wrld state oncep-override
                       suspensions fcd-lst)))))))))))
 
+;; DAG - maintain mapping between hyps and limits
 (defun advance-fc-activation3
-  (act0 hyps unify-subst-lst ttree-lst                       ; key args
+  (act0 hyps backchain-limit-lst unify-subst-lst ttree-lst                       ; key args
         fc-round type-alist ens force-flg wrld state oncep-override   ; contextual args
         suspensions fcd-lst)                                 ; answers
   (cond ((endp unify-subst-lst)
@@ -3045,13 +3108,15 @@
          (mv-let (suspensions1 fcd-lst1)
                  (advance-fc-activation2
                   act0
-                  hyps (car unify-subst-lst) (car ttree-lst)
+                  ;; DAG - maintain mapping between hyps and limits
+                  hyps backchain-limit-lst (car unify-subst-lst) (car ttree-lst)
                   fc-round type-alist ens force-flg wrld state oncep-override
                   suspensions
                   fcd-lst)
                  (advance-fc-activation3
                   act0
-                  hyps (cdr unify-subst-lst) (cdr ttree-lst)
+                  ;; DAG - maintain mapping between hyps and limits
+                  hyps backchain-limit-lst (cdr unify-subst-lst) (cdr ttree-lst)
                   fc-round type-alist ens force-flg wrld state oncep-override
                   suspensions1 fcd-lst1)))))
 
@@ -3070,7 +3135,11 @@
    (advance-fc-activation1
     act
     (access fc-activation act :inst-hyp)
+    ;; DAG - slot for inst-hyp backchain limit
+    (access fc-activation act :bc-limit)
     (access fc-activation act :hyps)
+    ;; DAG - slot for hyps backchain limit list
+    (access fc-activation act :backchain-limit-lst)
     (access fc-activation act :unify-subst)
     (access fc-activation act :ttree)
     fc-round type-alist ens force-flg wrld state oncep-override

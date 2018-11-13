@@ -584,9 +584,10 @@
   (cond (backchain-limit-lst (cadr backchain-limit-lst))
         (t (let ((limit (default-backchain-limit wrld flg)))
              (and limit
-                  (make-list (length hyps)
-                             :initial-element
-                             limit))))))
+                  (cond ((eq flg :meta) limit)
+                        (t (make-list (length hyps)
+                                      :initial-element
+                                      limit))))))))
 
 (defun create-rewrite-rule (rune nume hyps equiv lhs rhs loop-stopper-lst
                                  backchain-limit-lst match-free-value wrld)
@@ -2979,12 +2980,15 @@
                    ctx ens wrld state))))
 
 (defun putprop-forward-chaining-rules-lst
-  (rune nume triggers hyps concls match-free wrld)
+  ;; DAG : :forward-chaining backchain-limit-lst support
+  (rune nume triggers backchain-limit-lst hyps concls match-free wrld)
   (cond ((null triggers)
          (put-match-free-value match-free rune wrld))
         (t (putprop-forward-chaining-rules-lst
             rune nume
             (cdr triggers)
+            ;; DAG : :forward-chaining backchain-limit-lst support
+            backchain-limit-lst 
             hyps concls match-free
             (putprop (ffn-symb (car triggers))
                      'forward-chaining-rules
@@ -2994,18 +2998,26 @@
                                  :trigger (car triggers)
                                  :hyps hyps
                                  :concls concls
+                                 ;; DAG : :forward-chaining backchain-limit-lst support
+                                 :backchain-limit-lst 
+                                 (rule-backchain-limit-lst
+                                  backchain-limit-lst 
+                                  hyps wrld :ts)
                                  :match-free match-free)
                            (getprop (ffn-symb (car triggers))
                                     'forward-chaining-rules nil
                                     'current-acl2-world wrld))
                      wrld)))))
 
-(defun add-forward-chaining-rule (rune nume trigger-terms term match-free wrld)
+;; DAG : :forward-chaining backchain-limit-lst support
+(defun add-forward-chaining-rule (rune nume trigger-terms backchain-limit-lst term match-free wrld)
   (mv-let
    (hyps concls)
    (destructure-forward-chaining-term term)
    (putprop-forward-chaining-rules-lst rune nume
                                        trigger-terms
+                                       ;; DAG : :forward-chaining backchain-limit-lst support
+                                       backchain-limit-lst 
                                        hyps concls
                                        (match-free-fc-value match-free
                                                             hyps concls
@@ -4388,7 +4400,12 @@
                             :rhs (if mfc-symbol 'extended nil)
                             :subclass 'meta
                             :heuristic-info nil
-                            :backchain-limit-lst backchain-limit)
+                            :backchain-limit-lst
+                            (rule-backchain-limit-lst
+                             backchain-limit
+                             nil ; hyps (ignored for :meta)
+                             wrld
+                             :meta))
                       (mark-attachment-disallowed
                        (if (eq hyp-fn t)
                            (list fn)
@@ -7378,18 +7395,35 @@
                                                (not (fquotep first-hyp))
                                                (eq (ffn-symb first-hyp) 'not))
                                           (fargn first-hyp 1)
-                                        first-hyp)))
+                                        first-hyp))
+                                     ;; DAG - if no trigger term or
+                                     ;; backchain limit list is
+                                     ;; provided we default to
+                                     ;; :backchain-limit-lst (0) which
+                                     ;; essentially requires that the
+                                     ;; first hyp (trigger term) be in
+                                     ;; the type-alist.
+                                     (backchain-limit-lst
+                                      (if (assoc-eq :BACKCHAIN-LIMIT-LST seen) nil
+                                        (list :BACKCHAIN-LIMIT-LST (list 0)))))
                                 (pprogn
+                                 ;; DAG - making the default behavior explicit.
                                  (observation ctx
                                               "The :TRIGGER-TERMS for the ~
                                                :FORWARD-CHAINING rule ~x0 will ~
-                                               consist of the list containing ~p1."
+                                               consist of the list containing ~p1 ~
+                                               and ~p2 must be true by simple type-set reasoning."
                                               name
-                                              (untranslate trigger-term nil wrld))
+                                              (untranslate trigger-term nil wrld)
+                                              (untranslate first-hyp nil wrld))
                                  (value (alist-to-keyword-alist
                                          seen
-                                         (list :TRIGGER-TERMS
-                                               (list trigger-term))))))))))
+                                         ;; DAG: add the default backchain-limit-lst
+                                         ;; if needed.
+                                         (append 
+                                          backchain-limit-lst
+                                          (list :TRIGGER-TERMS
+                                                (list trigger-term)))))))))))
             (t (value (alist-to-keyword-alist seen nil)))))
      ((eq token :TYPE-PRESCRIPTION)
       (cond ((not (assoc-eq :TYPED-TERM seen))
@@ -7735,6 +7769,8 @@
                      (cond
                       ((not (member-eq token
                                        '(:REWRITE :META :LINEAR
+                                                  ;; DAG - allow backchaining for forward-chaining rules, too.
+                                                  :FORWARD-CHAINING
                                                   :TYPE-PRESCRIPTION)))
                        (er soft ctx
                            "The rule-class ~@0 is not permitted to have a ~
@@ -8301,7 +8337,7 @@
             name
             (cadr (assoc-keyword :TYPED-TERM (cdr class)))
             term
-            (cadr (assoc-keyword :BACKCHAIN-LIMIT-LST (cdr class)))
+            (assoc-keyword :BACKCHAIN-LIMIT-LST (cdr class))
             ctx ens wrld state))
           (:DEFINITION
            (chk-acceptable-definition-rule
@@ -8484,8 +8520,7 @@
            (add-meta-rule rune nume
                           (cadr (assoc-keyword :TRIGGER-FNS (cdr class)))
                           term
-                          (cadr (assoc-keyword :BACKCHAIN-LIMIT-LST
-                                               (cdr class)))
+                          (assoc-keyword :BACKCHAIN-LIMIT-LST (cdr class))
                           wrld))
           (:CLAUSE-PROCESSOR
            (add-clause-processor-rule (base-symbol rune) term wrld))
@@ -8493,6 +8528,8 @@
            (add-forward-chaining-rule rune nume
                                       (cadr (assoc-keyword :TRIGGER-TERMS
                                                            (cdr class)))
+                                      ;; DAG : :forward-chaining backchain-limit-lst support
+                                      (assoc-keyword :BACKCHAIN-LIMIT-LST (cdr class))
                                       term
                                       (cadr (assoc-keyword :MATCH-FREE
                                                            (cdr class)))
@@ -8502,9 +8539,7 @@
                                        (cadr (assoc-keyword :TYPED-TERM
                                                             (cdr class)))
                                        term
-                                       (cadr (assoc-keyword
-                                              :BACKCHAIN-LIMIT-LST
-                                              (cdr class)))
+                                       (assoc-keyword :BACKCHAIN-LIMIT-LST (cdr class))
                                        ens wrld nil))
           (:DEFINITION
            (add-definition-rule rune nume

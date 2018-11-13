@@ -6815,6 +6815,14 @@
          ((and ,not-flg (eq ,ignore :tta)) :fta)
          (t ,ignore)))
 
+(defmacro adjust-objective (not-flg obj)
+  
+; DAG - Adjust the objective based on the not-flg
+
+  `(let ((obj ,obj))
+     (if (or (not ,not-flg) (eq obj '?)) obj
+       (not obj))))
+
 ; To decide if backchaining has gone on long enough we use:
 
 (defun backchain-limit-reachedp1 (n ancestors)
@@ -6870,10 +6878,45 @@
 (defattach (oncep-tp oncep-tp-builtin)
   :skip-checks t)
 
+;; DAG - This macro allows us to pretend that nothing has changed with
+;; type-set-rec unless we specifically change it at the call site.
+(defmacro type-set-rec (x force-flg dwp type-alist ancestors ens w ttree
+                          pot-lst pt backchain-limit)
+  `(type-set-only-rec ,x ,force-flg ,dwp ,type-alist ,ancestors ,ens ,w ,ttree
+                      ,pot-lst ,pt ,backchain-limit ,*ts-unknown*))
+
+;; DAG - We use this to repair the type set returned from
+;; type-set-with-rules-only.  Since type-set-with-rules-only considers
+;; only rules that eliminate types in "only" we need to be
+;; conservative and say that any other type is possible.  NOTE: if
+;; only = *ts-unknown* then this has no effect.
+(defmacro conservative-type-spec (ts only)
+  `(ts-union ,ts (ts-complement ,only)))
+
+;; DAG - Express an objective as an 'only' typeset to minimize 
+;; the types of rules we will consider.
+(defmacro objective-to-only (obj)
+  ;; An objective is either t, nil or ?
+  `(if (eq ,obj '?) ,*ts-unknown*
+     (if ,obj ,*ts-nil* ,*ts-non-nil*)))
+
+;; DAG - Given that we may be ignoring one of the subsequent
+;; type-alists, is there any reasoning we can minimize when calling
+;; type-spec?
+(defmacro objective-from-ignore (ignore)
+  `(cond
+    ;; Only really try to falsify it
+    ((eq ,ignore :fta) nil)
+    ;; Only really try to verify it
+    ((eq ,ignore :tta) t)
+    (t                 '?)))
+
 (mutual-recursion
 
-(defun type-set-rec (x force-flg dwp type-alist ancestors ens w ttree
-                       pot-lst pt backchain-limit)
+;; DAG - This updated interface to type-set-rec allows us to limit the
+;; set of rules we are willing to apply during type-set reasoning.
+(defun type-set-only-rec (x force-flg dwp type-alist ancestors ens w ttree
+                                 pot-lst pt backchain-limit only)
 
 ; X is a term and type-alist is a type alist mapping terms to their type-sets
 ; (and some ttrees) and thus encoding the current assumptions.  In a break with
@@ -7082,7 +7125,8 @@
 ; We have to be careful to avoid forcing and use of the pot-lst.
 
      (mv-let (ts1 ttree1)
-             (type-set-rec (lambda-body (ffn-symb x))
+             ;; DAG - use the only interface to limit reasoning 
+             (type-set-only-rec (lambda-body (ffn-symb x))
                            nil ; avoid forcing in lambda-body context
                            nil ; dwp
                            (zip-variable-type-alist
@@ -7113,7 +7157,9 @@
 
                            nil
                            pt
-                           backchain-limit)
+                           backchain-limit
+                           ;; DAG - avoid duplicating effort
+                           (if ts0 (ts-intersection ts0 only) only))
              (type-set-finish x ts0 ttree0 ts1 ttree1 type-alist)))
 
 ;     ((flambda-applicationp x)
@@ -7157,14 +7203,24 @@
 ;      (type-set-finish x ts0 ttree0 *ts-unknown* ttree type-alist))
 
     ((eq (ffn-symb x) 'not)
-     (mv-let (ts1 ttree1)
-             (type-set-rec (fargn x 1) force-flg
-                           nil ; dwp
-                           type-alist ancestors
-                           ens w ttree pot-lst pt backchain-limit)
-             (mv-let (ts1 ttree1)
-                     (type-set-not ts1 ttree1 ttree)
-                     (type-set-finish x ts0 ttree0 ts1 ttree1 type-alist))))
+     ;;
+     ;; DAG - set up our 'only' mask for this dive into not. If we are
+     ;; looking for a specific boolean variable, then invert only to
+     ;; look for its negation.  Otherwise just allow everything.
+     ;; 
+     (let* ((nilonly (ts= only *ts-nil*))
+            (either (and (not nilonly) (ts-subsetp *ts-nil* only)))
+            (only   (if either *ts-unknown*
+                      (if nilonly *ts-non-nil* *ts-nil*))))
+       (mv-let (ts1 ttree1)
+         (type-set-only-rec (fargn x 1) force-flg
+                              nil ; dwp
+                              type-alist ancestors
+                              ens w ttree pot-lst pt backchain-limit
+                              only)
+         (mv-let (ts1 ttree1)
+           (type-set-not ts1 ttree1 ttree)
+           (type-set-finish x ts0 ttree0 ts1 ttree1 type-alist)))))
     (t
      (let* ((fn (ffn-symb x))
             (recog-tuple (most-recent-enabled-recog-tuple
@@ -7281,7 +7337,8 @@
                        x force-flg
                        dwp ; see comment in rewrite-atm about "use of dwp"
                        type-alist ancestors ens w
-                       *ts-unknown* ttree pot-lst pt backchain-limit)
+                       (ts-intersection ts only) ;; DAG don't duplicate effort
+                       ttree pot-lst pt backchain-limit)
                       (mv (ts-intersection ts ts2) ttree2))))))))
         ((eq fn 'if)
 
@@ -7309,7 +7366,9 @@
                                   ens
                                   w
                                   pot-lst pt nil
-                                  backchain-limit)
+                                  backchain-limit
+                                  '? ;; DAG -- we should recompute the objective from 'only'
+                                  )
 
 ; If must-be-true or must-be-false is set, then ttree1 explains the
 ; derivation of that result.  If neither is derived, then ttree1 is
@@ -7397,16 +7456,19 @@
 ; WARNING:  There is another call of type-set-with-rules above, in the
 ; recog-tuple case.  If you change this one, change that one!
 
-         (mv-let (ts1 ttree1)
+         ;; DAG - construct a real ts to work with below ..
+         (let ((ts1 (or ts0 *ts-unknown*)))
+           (mv-let (ts1 ttree1)
                  (type-set-with-rules
                   (getprop fn 'type-prescriptions nil 'current-acl2-world w)
                   x force-flg
                   dwp ; see comment in rewrite-atm about "use of dwp"
                   type-alist ancestors ens w
-                  *ts-unknown* ttree
+                  (ts-intersection ts1 only)  ;; DAG Don't duplicate effort
+                  ttree
                   pot-lst pt backchain-limit)
                  (type-set-finish x ts0 ttree0 ts1 ttree1
-                                  type-alist)))))))))
+                                  type-alist))))))))))
 
 (defun type-set-lst (x force-flg dwp type-alist ancestors ens w
                      pot-lst pt backchain-limit)
@@ -7842,7 +7904,8 @@
                         flg
                         (mv-let
                          (ts1 ttree1)
-                         (type-set-rec atm1 force-flg dwp type-alist
+                         ;; DAG - use the only interface to limit reasoning 
+                         (type-set-only-rec atm1 force-flg dwp type-alist
 
 ; We know ancestors is not t here, by the tests above.
 
@@ -7857,8 +7920,19 @@
                                        (new-backchain-limit
                                         (car backchain-limit-lst)
                                         backchain-limit
-                                        ancestors))
-                         (let ((ts (if not-flg
+                                        ancestors) 
+                                       ;; DAG - avoid working too hard
+                                       ;; to falsify hyps 
+                                       ;; 
+                                       ;; Note: we *could* be smarter
+                                       ;; here and hit it again if
+                                       ;; obj="t" failed to satisfy it
+                                       ;; .. that might help folks who
+                                       ;; like to "force" type
+                                       ;; prescription hyps as a
+                                       ;; matter of course.
+                                       (if forcep *ts-unknown* (if not-flg *ts-non-nil* *ts-nil*)))
+                         (let ((ts (if not-flg 
                                        (cond ((ts= ts1 *ts-nil*) *ts-t*)
                                              ((ts-intersectp ts1 *ts-nil*)
                                               *ts-boolean*)
@@ -8052,8 +8126,40 @@
                                 ttree
                                 pot-lst pt backchain-limit))))
 
-(defun type-set-with-rules (tp-lst term force-flg dwp type-alist ancestors ens
-                            w ts ttree pot-lst pt backchain-limit)
+;; DAG - This function is intended to act as a conservative interface
+;; for type-set-with-rules-only which, if not called initially with
+;; only = *ts-unknown*, is otherwise not conservative.
+(defun type-set-with-rules (tp-lst term force-flg dwp type-alist ancestors ens w
+                                   only
+                                   ttree pot-lst pt backchain-limit)
+  (mv-let
+    (ts1 ttree1)
+    ;; DAG - we have refactored this check to happend prior to the
+    ;; loop to minimize our effort in the loop.  The biggest
+    ;; difference is that we are using a different type-alist in this
+    ;; context .. (we don't return the type-alist so I'm not really
+    ;; sure what is going on with that)
+    (type-set-primitive term force-flg dwp type-alist ancestors ens w ttree
+                        pot-lst pt backchain-limit)
+    ;; We use this information to further reduce the size of our only target
+    (let ((only1 (ts-intersection ts1 only)))
+      (mv-let (tsres ttree2) (type-set-with-rules-only tp-lst term force-flg dwp type-alist ancestors ens w 
+                                                       only1
+                                                       ttree1 pot-lst pt backchain-limit)
+              ;; DAG - this restores to our type set any information
+              ;; that has not been obtained legitimately.
+              (let ((ts2 (conservative-type-spec tsres only1)))
+                (let ((ts3 (ts-intersection ts2 ts1)))
+                  ;; DAG - refactored from the original base case of type-set-with-rules
+                  (let ((ttree3 (if (ts= ts3 ts1) ttree1 ttree2)))
+                    (mv ts3 ttree3))))))))
+
+;; DAG - Note that this function is not sound unless it is called with
+;; only=*ts-unknown* or the return result is corrected using
+;; (conservative-type-spec tsres only).
+(defun type-set-with-rules-only (tp-lst term force-flg dwp type-alist ancestors ens w 
+                                       only 
+                                       ttree pot-lst pt backchain-limit)
 
 ; We try to apply each type-prescription in tp-lst, intersecting
 ; together all the type sets we get and accumulating all the ttrees.
@@ -8061,29 +8167,27 @@
 ; ignore its ttree.
 
   (cond
-   ((null tp-lst)
-    (mv-let
-     (ts1 ttree1)
-     (type-set-primitive term force-flg dwp type-alist ancestors ens w ttree
-                         pot-lst pt backchain-limit)
-     (let ((ts2 (ts-intersection ts1 ts)))
-       (mv ts2 (if (ts= ts2 ts) ttree ttree1)))))
+   ;; DAG - quit once the only mask is empty
+   ((or (null tp-lst) (ts= only *ts-empty*))
+    ;; DAG - why do we get to drop the "type-alist" that we have
+    ;; been accumulating all along?
+    (mv only ttree))
 
-   ((ts-subsetp ts
+   ((ts-subsetp only
                 (access type-prescription (car tp-lst) :basic-ts))
 
-; Our goal is to make the final type-set, ts, as small as possible by
-; intersecting it with the type-sets returned to the various rules.  If ts is
+; Our goal is to make the final type-set, only, as small as possible by
+; intersecting it with the type-sets returned to the various rules.  If only is
 ; already smaller than or equal to the :basic-ts of a rule, there is no point
 ; in trying that rule: the returned type-set will be at least as large as
 ; :basic-ts (it has the :vars types unioned into it) and then when we intersect
-; ts with it we'll just get ts back.  The original motivation for this
+; only with it we'll just get only back.  The original motivation for this
 ; short-cut was to prevent the waste of time caused by the
 ; pre-guard-verification type-prescription if the post-guard-verification rule
 ; is present.
 
-    (type-set-with-rules (cdr tp-lst)
-                         term force-flg dwp type-alist ancestors ens w ts ttree
+    (type-set-with-rules-only (cdr tp-lst)
+                         term force-flg dwp type-alist ancestors ens w only ttree
                          pot-lst pt backchain-limit))
    (t
      (mv-let
@@ -8091,15 +8195,15 @@
        (type-set-with-rule (car tp-lst)
                            term force-flg dwp type-alist ancestors ens w ttree
                            pot-lst pt backchain-limit)
-       (let ((ts2 (ts-intersection ts1 ts)))
-         (type-set-with-rules (cdr tp-lst)
-                              term force-flg dwp type-alist1 ancestors ens w
-                              ts2
-                              (if (and (ts= ts2 ts)
-                                       (equal type-alist type-alist1))
-                                  ttree
-                                  ttree1)
-                              pot-lst pt backchain-limit))))))
+       (let ((only2 (ts-intersection ts1 only)))
+         (type-set-with-rules-only (cdr tp-lst)
+                                   term force-flg dwp type-alist1 ancestors ens w
+                                   only2
+                                   (if (and (ts= only2 only)
+                                            (equal type-alist type-alist1))
+                                       ttree
+                                     ttree1)
+                                   pot-lst pt backchain-limit))))))
 
 ;; RAG - I added an entry for floor1, which is the only primitive
 ;; non-recognizer function we added for the reals.  [Ruben added entries for
@@ -8642,9 +8746,10 @@
 ;; RAG - In this function, I relaxed the tests for rational to include
 ;; realp as well.
 
+;; DAG - add an objective flag to limit type reasoning
 (defun assume-true-false-if (not-flg x xttree force-flg dwp
                                      type-alist ancestors ens w
-                                     pot-lst pt backchain-limit)
+                                     pot-lst pt backchain-limit obj)
 
 ; X is an IF-expression we have been asked to assume-true-false.  We
 ; return the standard tuple through the standard calls to mv-atf.
@@ -8661,13 +8766,30 @@
         (true-branch (fargn x 2))
         (false-branch (fargn x 3)))
 
+  ;; DAG - if the form is a logical 'and' or 'or' then evaluate the 
+  ;; test with the given objective
+  (let* ((boolean-objective (not (eq obj '?)))
+         (andlike-term      (and boolean-objective (or (equal true-branch *t*)
+                                                       (equal false-branch *nil*))))
+         ;; DAG - Because (or x y) appears to normalize into (if x x
+         ;; y) we need to do this to allow or's pushed by forward
+         ;; chaining rules to benefit from our optimizations.  Perhaps
+         ;; if we normalized boolean or's into (if x t y) we could
+         ;; drop this test ..
+         (equal-test-true-branch nil) #+joe(and boolean-objective
+                                                (not andlike-term)
+                                                (equal test true-branch))
+         (testobj (if (or andlike-term equal-test-true-branch) obj
+                    '?)))
+
 ; We start by recurring on the test.
 
     (mv-let (test-mbt test-mbf test-tta test-fta test-ttree)
             (assume-true-false-rec test xttree force-flg
                                    dwp type-alist ancestors ens w
                                    pot-lst pt nil
-                                   backchain-limit)
+                                   ;; DAG - pass along the test objective
+                                   backchain-limit testobj)
 
 ; In the first two branches, we know that test must be true or that test
 ; must be false.  We recur on the true branch or the false branch
@@ -8681,14 +8803,16 @@
                       (assume-true-false-rec true-branch test-ttree force-flg
                                              dwp test-tta ancestors ens w
                                              pot-lst pt nil
-                                             backchain-limit)
+                                             ;; DAG - pass along the objective
+                                             backchain-limit obj)
                       (mv-atf not-flg mbt mbf tta fta ttree nil)))
              (test-mbf
               (mv-let (mbt mbf tta fta ttree)
-                      (assume-true-false-rec false-branch test-ttree force-flg
-                                             dwp test-fta ancestors ens w
-                                             pot-lst pt nil
-                                             backchain-limit)
+                (assume-true-false-rec false-branch test-ttree force-flg
+                                       dwp test-fta ancestors ens w
+                                       pot-lst pt nil
+                                       ;; DAG - pass along the objective
+                                       backchain-limit obj)
                       (mv-atf not-flg mbt mbf tta fta ttree nil)))
 
              (t
@@ -8701,14 +8825,20 @@
 
               (mv-let
                (tb-mbt tb-mbf tb-tta tb-fta tb-ttree)
-               (assume-true-false-rec true-branch xttree force-flg
-                                      dwp test-tta ancestors ens w
-                                      pot-lst pt nil backchain-limit)
+               ;; DAG - I'm just not sure how common this case is
+               ;; .. and we don't want to waste time doing equality
+               ;; checks of terms if it rarely happens ..
+               (if equal-test-true-branch (mv test-mbt test-mbf test-tta test-fta test-ttree)
+                 (assume-true-false-rec true-branch xttree force-flg
+                                        dwp test-tta ancestors ens w
+                                        ;; DAG - pass along the objective
+                                        pot-lst pt nil backchain-limit obj))
                (mv-let
                 (fb-mbt fb-mbf fb-tta fb-fta fb-ttree)
                 (assume-true-false-rec false-branch xttree force-flg
                                        dwp test-fta ancestors ens w
-                                       pot-lst pt nil backchain-limit)
+                                       ;; DAG - pass along the objective
+                                       pot-lst pt nil backchain-limit obj)
                 (cond
 
                  ((and tb-mbf fb-mbf)
@@ -8940,10 +9070,15 @@
                                           type-alist)
                                          (extend-type-alist-simple
                                           x *ts-nil* xttree type-alist)
-                                         nil nil)))))))))))))
+                                         nil nil))))))))))))))
 
+;; DAG - extend the signature to include and objective flag.  Note
+;; that the objective is similar to 'ignore0' but .. not exactly the
+;; same.  We tried using ignore0 .. but at some point, as you begin to
+;; thread it deeper into other functions, you begin to lie about the
+;; fact that you are going to 'ignore' one of the outputs.
 (defun assume-true-false-rec (x xttree force-flg dwp type-alist ancestors ens w
-                                pot-lst pt ignore0 backchain-limit)
+                                pot-lst pt ignore0 backchain-limit obj)
 
 ; We assume x both true and false, extending type-alist as appropriate.
 ; Xttree is the ttree with which we are to tag all the entries added to
@@ -9035,21 +9170,25 @@
     ((variablep x)
      (assume-true-false1
       xnot-flg x xttree force-flg dwp type-alist ancestors ens w
-      pot-lst pt backchain-limit))
+      ;; DAG - pass along an adjusted objective flag
+      pot-lst pt backchain-limit (adjust-objective xnot-flg obj)))
     ((fquotep x)
      (if (equal x *nil*)
          (mv-atf xnot-flg nil t nil type-alist nil xttree)
          (mv-atf xnot-flg t nil type-alist nil nil xttree)))
     ((flambda-applicationp x)
      (assume-true-false1 xnot-flg x xttree
-                         force-flg dwp type-alist ancestors ens w
-                         pot-lst pt backchain-limit))
+                                force-flg dwp type-alist ancestors ens w
+                                ;; DAG - pass along an adjusted objective flag
+                                pot-lst pt backchain-limit (adjust-objective xnot-flg obj)))
     (t
      (let ((recog-tuple
             (most-recent-enabled-recog-tuple (ffn-symb x)
                                              (global-val 'recognizer-alist w)
                                              ens))
-           (ignore (adjust-ignore-for-atf xnot-flg ignore0)))
+           (ignore (adjust-ignore-for-atf xnot-flg ignore0))
+           ;; DAG - compute an adjusted objective flag
+           (obj1    (adjust-objective xnot-flg obj)))
        (cond
         (recog-tuple
 
@@ -9225,7 +9364,8 @@
                        (fargs x)
                        (body (ffn-symb x) t w))
            xttree force-flg dwp type-alist ancestors ens w
-           pot-lst pt ignore backchain-limit)
+           ;; DAG - pass along the adjusted objective flag
+           pot-lst pt ignore backchain-limit obj1)
           (if xnot-flg
               (mv mbf mbt fta tta ttree)
               (mv mbt mbf tta fta ttree))))
@@ -9862,7 +10002,8 @@
 ; the corresponding components of x.  Q.E.D.
 
                       xttree force-flg dwp type-alist ancestors ens w
-                      pot-lst pt backchain-limit)
+                      ;; DAG - pass along an adjusted objective flag
+                      pot-lst pt backchain-limit (adjust-objective xnot-flg obj))
 
 ; Inefficiency: It is somewhat troubling that we are holding ts1 and
 ; ts2 in our hands while invoking assume-true-false1 on (< arg1 arg2),
@@ -10023,7 +10164,8 @@
          (mv-let (mbt mbf tta fta ttree)
                  (assume-true-false1
                   xnot-flg x xttree force-flg dwp type-alist ancestors ens w
-                  pot-lst pt backchain-limit)
+                  ;; DAG - pass along an adjusted objective flag
+                  pot-lst pt backchain-limit (adjust-objective xnot-flg obj))
                  (cond ((or mbt mbf)
                         (mv mbt mbf tta fta ttree))
                        (t (let ((tta (if xnot-flg fta tta))
@@ -10032,21 +10174,27 @@
                                     (assume-true-false-rec
                                      (fargn x 1)
                                      xttree force-flg dwp tta ancestors ens w
-                                     pot-lst pt :fta backchain-limit)
+                                     ;; DAG - pass along an unknown objective flag
+                                     pot-lst pt :fta backchain-limit '?)
                                     (declare (ignore mbt1 fta1))
                                     (mv-atf xnot-flg mbt mbf tta1 fta
                                             ttree nil)))))))
         ((eq (ffn-symb x) 'IF)
          (assume-true-false-if xnot-flg x xttree force-flg dwp
                                type-alist ancestors ens w
-                               pot-lst pt backchain-limit))
+                               ;; DAG - pass along an adjusted objective flag
+                               pot-lst pt backchain-limit (adjust-objective xnot-flg obj)))
         (t (assume-true-false1 xnot-flg x xttree
-                               force-flg dwp type-alist ancestors ens
-                               w
-                               pot-lst pt backchain-limit))))))))
+                                      force-flg dwp type-alist ancestors ens
+                                      w
+                                      ;; DAG - pass along an adjusted objective flag
+                                      pot-lst pt backchain-limit (adjust-objective xnot-flg obj)))))))))
 
+;;
+;; DAG - passing assume-true-false1 the objective flag from assume-true-false
+;;
 (defun assume-true-false1 (not-flg x xttree force-flg dwp type-alist ancestors
-                                   ens w pot-lst pt backchain-limit)
+                                   ens w pot-lst pt backchain-limit obj)
 
 ; Roughly speaking, this is the simple assume-true-false, which just
 ; computes the type-set of x and announces that x must be t, must be
@@ -10062,10 +10210,11 @@
 ; type-alists.
 
   (mv-let (ts ttree)
-          (type-set-rec x force-flg
-                        dwp
-                        type-alist ancestors ens w nil
-                        pot-lst pt backchain-limit)
+          (type-set-only-rec x force-flg
+                             dwp
+                             type-alist ancestors ens w nil
+                             ;; DAG - use the objective flag to compute an only type set
+                             pot-lst pt backchain-limit (objective-to-only obj))
 
 ; If we can decide x on the basis of ts, do so and report use of ttree.
 ; Xttree will be put in by mv-atf.
@@ -10196,22 +10345,34 @@
 
 )
 
-(defun type-set (x force-flg dwp type-alist ens w ttree pot-lst pt)
-
+;; DAG - This interface to type-set allows us to limit the set of rules
+;; we apply during type-set reasoning to to restrict backchaining
+(defun type-set-only (x force-flg dwp type-alist ens w ttree pot-lst pt only backchain-limit)
+  
 ; See type-set-rec.
 
-  (type-set-rec x force-flg dwp type-alist
-                nil ; ancestors
-                ens w ttree
-                pot-lst pt
-                (backchain-limit w :ts)))
+  (type-set-only-rec x force-flg dwp type-alist
+                     nil ; ancestors
+                     ens w ttree
+                     pot-lst pt
+                     ;; DAG - Or perhaps the minimum of backchain-limit and (backchain-limit w :ts) ?
+                     backchain-limit only))
+
+;; DAG - This macro allows us to pretend that nothing has changed with
+;; type-set unless we specifically change it at the call site.  Note
+;; that we are using a conservative value for only.
+(defmacro type-set (x force-flg dwp type-alist ens w ttree pot-lst pt)
+  `(let ((w ,w))
+     (type-set-only ,x ,force-flg ,dwp ,type-alist ,ens w ,ttree ,pot-lst ,pt ,*ts-unknown* (backchain-limit w :ts))))
 
 (defun assume-true-false (x xttree force-flg dwp type-alist ens w pot-lst pt
                             ignore0)
   (assume-true-false-rec x xttree force-flg dwp type-alist
                          nil ; ancestors
                          ens w pot-lst pt ignore0
-                         (backchain-limit w :ts)))
+                         (backchain-limit w :ts)
+                         ;; DAG - use the ignore flag to compute an objective
+                         (objective-from-ignore ignore0)))
 
 (defun ok-to-force-ens (ens)
   (and (enabled-numep *force-xnume* ens)
@@ -10837,7 +10998,13 @@
                  type-alist0 ens wrld
                  *type-alist-equality-loop-max-depth*))))))
 
-(defun known-whether-nil (x type-alist ens force-flg dwp wrld ttree)
+;; DAG - This macro allows us to pretend that nothing has changed with
+;; known-whether-nil nless we specifically change it at the call site.
+(defmacro known-whether-nil (x type-alist ens force-flg dwp wrld ttree)
+  `(known-whether-nil-obj ,x ,type-alist ,ens ,force-flg ,dwp ,wrld ,ttree '? (backchain-limit ,wrld :ts)))
+
+;; DAG - Add an objective flag and backchain limit to restrict type reasoning
+(defun known-whether-nil-obj (x type-alist ens force-flg dwp wrld ttree obj backchain-limit)
 
 ; This function determines whether we know, from type-set reasoning,
 ; whether x is nil or not.  It returns three values.  The first is the
@@ -10862,7 +11029,8 @@
   (cond ((quotep x)
          (mv t (equal x *nil*) ttree))
         (t (mv-let (ts ttree)
-                   (type-set x force-flg dwp type-alist ens wrld ttree nil nil)
+                   ;; DAG - use the objective flag to compute an only type set
+                   (type-set-only x force-flg dwp type-alist ens wrld ttree nil nil (objective-to-only obj) backchain-limit)
                    (cond ((ts= ts *ts-nil*)
                           (mv t t ttree))
                          ((ts-intersectp ts *ts-nil*)
@@ -11167,10 +11335,13 @@
                                     (iff-flg (mv t1 ttree))
                                     (t
                                      (mv-let (ts1 ttree1)
-                                             (type-set
+                                             (type-set-only
                                               t1 ; see note above on force-flg
                                               nil nil type-alist ens wrld nil
-                                              nil nil)
+                                              nil nil
+                                              ;; DAG - restrict type reasoning
+                                              (ts-complement *ts-boolean*)
+                                              (backchain-limit wrld :ts))
                                              (cond
                                               ((ts-subsetp ts1 *ts-boolean*)
                                                (mv t1 (cons-tag-trees ttree1
@@ -11338,8 +11509,11 @@
                              (iff-flg (mv t1 ttree))
                              (t (mv-let
                                  (ts1 ttree1)
-                                 (type-set t1 nil nil type-alist ens wrld nil
-                                           nil nil)
+                                 (type-set-only t1 nil nil type-alist ens wrld nil
+                                           nil nil
+                                           ;; DAG -- restrict type reasoning
+                                           (ts-complement *ts-boolean*)
+                                           (backchain-limit wrld :ts))
                                  (cond
                                   ((ts-subsetp ts1 *ts-boolean*)
                                    (mv t1 (cons-tag-trees ttree1 ttree)))

@@ -11900,8 +11900,11 @@
    ((endp hyps) (mv t calist))
    (t (let* ((inst-hyp (subcor-var formals actuals (car hyps))))
         (mv-let (ts ttree)
-                (type-set inst-hyp nil nil type-alist
-                          ens wrld nil pot-lst nil)
+                (type-set-only inst-hyp nil nil type-alist
+                               ens wrld nil pot-lst nil 
+                               *ts-nil* ;; DAG - avoid working too hard to falsify hyp
+                               (backchain-limit wrld :ts) ;; backchain-limit
+                               )
                 (cond
                  ((or (tagged-objectsp 'assumption ttree)
                       (tagged-objectsp 'fc-derivation ttree))
