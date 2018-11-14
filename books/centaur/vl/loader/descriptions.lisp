@@ -63,6 +63,7 @@ can occur at the top level of a SystemVerilog design.</p>
 should never know or care about descriptions because, at the end of the loading
 process, we convert all of the descriptions into a @(see vl-design-p).</p>")
 
+#+joe
 (defrule tag-when-vl-description-p-forward
   ;; bozo integrate into deftranssum?
   (implies (vl-description-p x)
