@@ -2,6 +2,7 @@
 
 (include-book "finite-set-theory/total-ordering" :dir :system)
 (include-book "coi/util/mv-nth" :dir :system)
+(ld "tracing.lisp")
 
 ;; This is a linear routine built on top of the ACL2 poly
 ;; representation.
@@ -32,12 +33,50 @@
   (declare (xargs :mode :program))
   (not (arith-term-order a b)))
 
-(defrec pstat (sln zeros plist) t)
+(set-state-ok t)
+
+(defun show-base (poly state)
+  (declare (xargs :mode :program))
+  (untranslate (poly-to-expr poly) nil (w state)))
+
 (defrec zeros (originals . zbases) t)
 
-(defun self-dot (alist1 dot)
+(defun show-zeros (zeros state)
+  (declare (xargs :mode :program))
+  (let ((originals (access zeros zeros :originals))
+        (zbases    (access zeros zeros :zbases)))
+    `(zeros
+      ,(untranslate `(:originals
+                      ,@(poly-term-lst originals)
+                      ) nil (w state))
+      ,(untranslate `(:zbases
+                      ,@(poly-term-lst zbases)
+                      ) nil (w state))
+      )))
+    
+(defrec pstat (sln zeros plist) t)
+
+(defun show-plist (plist state)
+  (declare (xargs :mode :program))
+  (untranslate `(:plist ,@(poly-term-lst plist)) nil (w state)))
+
+(defun show-pstat (pstat state)
+  (declare (xargs :mode :program))
+  (let ((zeros (access pstat pstat :zeros))
+        (plist (access pstat pstat :plist))
+        (sln   (access pstat pstat :sln)))
+      `(pstat
+        (:sln ,sln)
+        ,(show-zeros zeros state)
+        ,(show-plist plist state)
+        )))
+
+(defun self-dot-alist (alist1 dot)
   (if (not (consp alist1)) dot
-    (self-dot (cdr alist1) (+ (* (cdar alist1) (cdar alist1)) dot))))
+    (self-dot-alist (cdr alist1) (+ (* (cdar alist1) (cdar alist1)) dot))))
+
+(defun self-dot (base)
+  (self-dot-alist (access poly base :alist) 0))
 
 (defun dot-alist (alist1 alist2 dot)
   (declare (xargs :measure (+ (len alist1) (len alist2))))
@@ -69,8 +108,11 @@
    ((<< (caar alist1) (caar alist2))
     (cons (car alist1) (scale-and-add (cdr alist1) alist2 coeff)))
    ((equal (caar alist1) (caar alist2))
-    (cons (cons (caar alist1) (+ (cdar alist1) (* coeff (cdar alist2))))
-          (scale-and-add (cdr alist1) (cdr alist2) coeff)))
+    (let ((value (+ (cdar alist1) (* coeff (cdar alist2)))))
+      (if (= value 0) 
+          (scale-and-add (cdr alist1) (cdr alist2) coeff)
+        (cons (cons (caar alist1) value)
+              (scale-and-add (cdr alist1) (cdr alist2) coeff)))))
    (t
     (cons (car alist2) (scale-and-add alist1 (cdr alist2) coeff)))))
 
@@ -107,10 +149,6 @@
          ((= 0 score) (score-list kind (cdr list) ref plist (cons poly zlist) nlist))
          (t           (score-list kind (cdr list) ref plist zlist (cons poly nlist))))))))
 
-(defun insert-positive-poly (score poly plist)
-  (declare (ignore score))
-  (cons poly plist))
-
 (defun poly-to-base (poly)
   (change poly poly 
           :relation '<=
@@ -131,17 +169,35 @@
 (defun zero-basep (base)
   (= (len (access poly base :alist)) 0))
 
+(trace$ (zero-basep
+         :entry `(zero-basep ,(show-base base state))
+         :exit  `(zero-basep ,(nth 0 values))))
+
+(defun insert-positive-poly (score poly plist)
+  (declare (ignore score))
+  (cons poly plist))
+
+(trace$ (insert-positive-poly
+         :entry `(insert-positive-poly ,score ,(show-base poly state) ,(show-plist plist state))
+         :exit  `(insert-positive-poly ,(show-pstat (nth 0 values) state))
+         ))
+
 (defun insert-zero-poly (poly zeros)
   (let ((originals (access zeros zeros :originals))
         (zbases    (access zeros zeros :zbases)))
     (let ((base (poly-to-base poly)))
-      (let ((base (remove-negative-zbases-from-base zbases (self-dot base 0) base)))
+      (let ((base (remove-negative-zbases-from-base zbases (self-dot base) base)))
         ;; Yeah .. so this would happen if any motion on the
         ;; vector would violate the existing zbases.
         (if (zero-basep base) (change zeros zeros :originals (cons poly originals))
           (make zeros 
                 :originals (cons poly originals)
                 :zbases    (cons base zbases)))))))
+
+(trace$ (insert-zero-poly
+         :entry `(insert-zero-poly ,(show-base poly state) ,(show-zeros zeros state))
+         :exit  `(insert-zero-poly ,(show-zeros (nth 0 values) state))
+         ))
 
 (defun insert-zero-poly-list (list zeros)
   (if (not (consp list)) zeros
@@ -150,7 +206,8 @@
 (defun unexpected (term)
   (cw "~x0~%" term))
 
-(defun insert-negative-poly (poly pstat)
+(defun insert-negative-poly (score poly pstat)
+  (declare (ignore score))
   (let ((zeros (access pstat pstat :zeros))
         (plist (access pstat pstat :plist))
         (sln   (access pstat pstat :sln)))
@@ -159,7 +216,7 @@
       (let ((base (poly-to-base poly)))
         (met ((pzbases zzbases nzbases) (score-list :bases zbases (access poly base :alist) nil nil nil))
           (declare (ignore pzbases))
-          (let ((base (remove-negative-zbases-from-base nzbases (self-dot base 0) base)))
+          (let ((base (remove-negative-zbases-from-base nzbases (self-dot base) base)))
             (let ((zbases (revappend zzbases nzbases)))
               ;; This is a contradiction .. we need to change the solution but we cannot ..
               (if (zero-basep base) (mv base nil pstat)
@@ -168,7 +225,7 @@
                   (if (consp empty) (mv (unexpected "**ERROR**") pstat nil)
                     ;; (base * (sln + coeff*base)) = base*sln + coeff*base^2 = 0 
                     ;; coeff = (- base*sln)/base^2
-                    (let ((coeff (/ (- (dot-alist (access poly base :alist) sln 0)) (self-dot base 0))))
+                    (let ((coeff (/ (- (dot-alist (access poly base :alist) sln 0)) (self-dot base))))
                       (let ((sln (scale-and-add-base-to-sln sln base coeff)))
                         (met ((plist zlist0 nlist) (score-list :bases plist (access poly base :alist) new-plist nil nil))
                           (met ((plist zlist nlist) (score-list :polys nlist sln plist nil nil))
@@ -183,15 +240,20 @@
                                                      :plist plist)))
                                     (mv nil nlist pstat)))))))))))))))))))
 
+(trace$ (insert-negative-poly
+         :entry `(insert-negative-poly ,score ,(show-base poly state) ,(show-pstat pstat state))
+         :exit  `(insert-negative-poly ,(show-pstat (nth 2 values) state))
+         ))
+
 ;; zeros contains two lists:
 ;; - original polys
 ;; - basis polys (derived)
 
 (defun dag-add-poly (poly pstat)
   (let ((score (score-poly poly pstat)))
-    (if (< 0 score) (mv nil nil (change pstat pstat :plist (cons poly (access pstat pstat :plist))))
+    (if (< 0 score) (mv nil nil (change pstat pstat :plist (insert-positive-poly score poly (access pstat pstat :plist))))
       (if (= 0 score) (mv nil nil (change pstat pstat :zeros (insert-zero-poly poly (access pstat pstat :zeros))))
-        (insert-negative-poly poly pstat)))))
+        (insert-negative-poly score poly pstat)))))
 
 (defun dag-add-poly-list (polys pstat)
   (declare (xargs :mode :program))
@@ -199,3 +261,67 @@
     (met ((unsat new-polys pstat) (dag-add-poly (car polys) pstat))
       (if (not unsat) (dag-add-poly-list (revappend new-polys (cdr polys)) pstat)
         (mv unsat pstat)))))
+
+(defun new-zeros ()
+  (make zeros
+        :originals nil
+        :zbases nil))
+
+(defun new-pstat ()
+  (make pstat
+        :sln nil
+        :zeros (new-zeros)
+        :plist nil))
+
+(defun dag-add-linear-pot (pot-lst pstat)
+  (declare (xargs :mode :program))
+  (if (not (consp pot-lst)) (mv nil pstat)
+    (let ((pot (car pot-lst)))
+      (met ((unsat pstat) (dag-add-poly-list (access linear-pot pot :negatives) pstat))
+        (if unsat (mv unsat pstat)
+          (met ((unsat pstat) (dag-add-poly-list (access linear-pot pot :positives) pstat))
+            (if unsat (mv unsat pstat)
+              (dag-add-linear-pot (cdr pot-lst) pstat))))))))
+
+(defttag :lp)
+:redef!
+
+(defun add-polys0 (lst pot-lst pt nonlinearp max-rounds)
+; Lst is a list of polys.  We filter out the true ones (and detect any
+; impossible ones) and then normalize and add the rest to pot-lst.
+; Any new polys thereby produced are also added until there's nothing
+; left to do.  We return the standard contradictionp and a new pot-lst.
+  (declare (xargs :mode :program))
+  (met ((unsat pstat) (dag-add-linear-pot pot-lst (new-pstat)))
+    (declare (ignore unsat))
+    (met ((unsat pstat) (dag-add-poly-list lst pstat))
+      (declare (ignore unsat pstat))
+      (mv-let (contradictionp lst)
+        (filter-polys lst nil)
+        (cond (contradictionp (mv contradictionp nil))
+              (t (add-polys1 lst pot-lst nil pt nonlinearp max-rounds 0)))))))
+
+#+joe
+(thm
+   (implies
+    (and
+     (acl2-numberp x)
+     (acl2-numberp y)
+     (< 0 (+ x y     -2))
+     (< 0 (+ (- x) y -4))
+     )
+    nil)
+   )
+
+#+joe
+(thm
+   (implies
+    (and
+     (acl2-numberp x)
+     (acl2-numberp y)
+     (< 0 (+ x y))
+     (< 0 (+ (- x) y))
+     (< 0 (+ (- y) -2))
+     )
+    nil)
+   )
