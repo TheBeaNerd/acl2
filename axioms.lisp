@@ -13302,6 +13302,7 @@ evaluated.  See :DOC certify-book, in particular, the discussion about ``Step
     fchecksum-obj2
     check-sum-obj
     verify-guards-fn1 ; to update *cl-cache*
+    dag-log-form
     ))
 
 (defconst *initial-logic-fns-with-raw-code*
