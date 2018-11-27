@@ -3522,7 +3522,7 @@
 (defun dag-log-form (form)
   (declare (ignorable form))
   #-acl2-loop-only
-  (with-open-file (logfile "/home/dagreve/git/acl2/dag.log" :direction :output :if-does-not-exist :create :if-exists :append)
+  (with-open-file (logfile "/accts/dagreve/git/acl2/dag.log" :direction :output :if-does-not-exist :create :if-exists :append)
     (pprint form logfile))
   #+acl2-loop-only
   nil
