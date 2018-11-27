@@ -3618,21 +3618,18 @@
 (defun dag-poly-to-vector (poly)
   (change poly poly :constant 0))
 
-(defun dag-remove-opposing-zvectors-from-vector1 (zvectors vector)
+(defun dag-remove-zvectors-from-vector (zvectors vector)
   (if (not (consp zvectors)) vector
     (let ((zref (car zvectors)))
       (let ((dot (dag-dot-vectors zref vector)))
-        (if (= 0 dot) (dag-remove-opposing-zvectors-from-vector1 (cdr zvectors) vector)
+        (if (= 0 dot) (dag-remove-zvectors-from-vector (cdr zvectors) vector)
           (let ((coeff (/ (- dot) (dag-self-dot zref))))
             ;; zref * (vector + coeff*zref) = 0
             ;; zref*vector + coeff*zref^2 = 0
             ;; coeff= (- (vector*zref))/(zref^2)
             ;; coeff = (- dot)/1.0
             (let ((vector (dag-scale-and-add-vectors vector zref coeff)))
-              (dag-remove-opposing-zvectors-from-vector1 (cdr zvectors) vector))))))))
-
-(defun dag-remove-opposing-zvectors-from-vector (zvectors vector)
-  (dag-remove-opposing-zvectors-from-vector1 zvectors vector))
+              (dag-remove-zvectors-from-vector (cdr zvectors) vector))))))))
 
 (defun dag-zero-vectorp (vector)
   (= (len (access poly vector :alist)) 0))
@@ -3656,13 +3653,15 @@
       (if (<= 0 dot) (dag-reconsider-negatives vector (cdr list) nlist (cons (car list) plist))
         (dag-reconsider-negatives vector (cdr list) (cons (car list) nlist) plist)))))
 
-;; remove negative vectors
+;; remove opposing polys
+;;
+;; The issue is that the zero list may contain negative inner products.
 ;; 
 (defun dag-remove-opposing-polys-from-vector (vector xlist zbasis zlist nnlist)
   (if (not (consp xlist)) (mv nil vector zbasis zlist nnlist)
     (let ((xref (car xlist)))
       (let ((xvec (dag-poly-to-vector xref)))
-        (let ((xvec (dag-remove-opposing-zvectors-from-vector zbasis xvec)))
+        (let ((xvec (dag-remove-zvectors-from-vector zbasis xvec)))
           (if (dag-zero-vectorp xvec)
               (dag-remove-opposing-polys-from-vector vector (cdr xlist) zbasis (cons xref zlist) nnlist)
             (let ((dot (dag-dot-vectors vector xvec)))
@@ -3684,15 +3683,14 @@
                           (if (dag-zero-vectorp vector)  (mv vector vector zbasis zlist nnlist)
                             (dag-remove-opposing-polys-from-vector vector xlist zbasis zlist nnlist)))))))))))))))
 
-(defun dag-remove-opposing-polys-from-vector-list (list xlist zbasis)
+(defun dag-remove-opposing-polys-from-vector-list (list xlist)
   (if (not (consp list)) nil
     (let ((vector (car list)))
-      (let ((vector (dag-remove-opposing-zvectors-from-vector zbasis vector)))
-        (if (dag-zero-vectorp vector) vector
-          (mv-let (unsat vector zbasis zlist xlist) (dag-remove-opposing-polys-from-vector vector xlist zbasis nil nil)
-            (declare (ignore vector zlist))
-            (or unsat
-                (dag-remove-opposing-polys-from-vector-list (cdr list) xlist zbasis))))))))
+      ;; The resulting vector is + or zero w/to all of the polys in xlist
+      (mv-let (unsat vector zbasis zlist nnlist) (dag-remove-opposing-polys-from-vector vector xlist nil nil nil)
+        (declare (ignore vector zbasis zlist nnlist))
+        (or unsat
+            (dag-remove-opposing-polys-from-vector-list (cdr list) xlist))))))
 
 (defun dag-insert-negative-poly (score poly pstat)
   (let ((zlist (access pstat pstat :zlist))
@@ -3745,7 +3743,7 @@
   ;;
   (let ((zlist (access pstat pstat :zlist)))
     (let ((nlist (dag-collect-strict-vectors zlist)))
-      (dag-remove-opposing-polys-from-vector-list nlist zlist nil))))
+      (dag-remove-opposing-polys-from-vector-list nlist zlist))))
 
 (defun dag-new-pstat ()
   (make pstat
@@ -3818,7 +3816,7 @@
                          (dag-log-form (list "unsound" unsat  contradictionp `(dag-add-polys1 ',lst ',pot-lst)
                                              `(add-polys1 ',lst ',pot-lst nil ',pt ',nonlinearp ',max-rounds 0 nil))))
                         ((and unsat incomplete (not contradictionp))
-                         (dag-log-form (list "bam!")))
+                         nil) #+joe(dag-log-form (list "bam!"))
                         ((and (not unsat) contradictionp)
                          (dag-log-form (list "incomplete" unsat contradictionp `(dag-add-polys1 ',lst ',pot-lst)
                                              `(add-polys1 ',lst ',pot-lst nil ',pt ',nonlinearp ',max-rounds 0 nil))))

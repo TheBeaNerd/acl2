@@ -80,7 +80,7 @@
                                   ,(show-vector v2 state))
          :exit  `(dag-dot-vectors ,(nth 0 values))))
 
-;;#+joe
+#+joe
 (trace$ (dag-score-list 
          :entry `(dag-score-list ,kind 
                                  ,(show-vector-list list state) 
@@ -138,12 +138,6 @@
          :entry `(add-strict-vectors ,(show-vector-list vectors state))
          :exit  `(add-strict-vectors ,(show-vector (nth 0 values) state))))
 
-#+joe
-(trace$ (dag-epsilon-unsat
-         :entry `(dag-epsilon-unsat ,(show-pstat pstat state))
-         :exit  (if (nth 0 values) `(epsilon-unsat ,(show-vector (nth 0 values) state))
-                  `(epsilon-unsat ,(nth 0 values)))))
-
 ;;#+joe
 (trace$ (dag-scale-and-add-vectors
          :entry `(dag-scale-and-add-vectors ,(show-vector v1 state) ,(show-vector v2 state) ,coeff)
@@ -189,13 +183,18 @@
    nil)
   :rule-classes nil)
 
+(trace$ (dag-remove-zvectors-from-vector
+         :entry `(dag-remove-zvectors-from-vector ,(show-vector-list zvectors state) ,(show-vector vector state))
+         :exit  `(dag-remove-zvectors-from-vector ,(show-vector (nth 0 values) state))
+         ))
+
 ;;#+joe
 (trace$ (dag-remove-opposing-polys-from-vector
          :entry `(dag-remove-opposing-polys-from-vector ,(show-vector vector state) 
                                                         ,(show-vector-list xlist state)
                                                         ,(show-vector-list zbasis state)
                                                         ,(show-vector-list zlist state)
-                                                        ,(show-vector-list plist state))
+                                                        ,(show-vector-list nnlist state))
          :exit  `(dag-remove-opposing-polys-from-vector ,(nth 0 values)
                                                         ,(show-vector (nth 1 values) state)
                                                         ,(show-vector-list (nth 2 values) state)
@@ -229,6 +228,10 @@
          :entry `(dag-check-pstat ,(show-pstat pstat state))
          :exit  `(dag-check-pstat ,(nth 0 values))))
 
+(trace$ (ignore-polyp
+         :entry `(ignore-polyp)
+         :exit  `(ignore-polyp ,(nth 0 values))))
+
 ;;#+joe
 (trace$ (ADD-POLY
          :entry `(ACL2-ADD-POLY ,(show-vector p state) ,(untranslate `(poly-pot ,@(poly-pot-list pot-lst)) nil (w state)) ,incomplete)
@@ -245,6 +248,12 @@
          :exit  `(ACL2-ADD-POLYS1 ,(nth 0 values) ,(nth 2 values))
          ))
 
+;;#+joe
+(trace$ (dag-epsilon-unsat
+         :entry `(dag-epsilon-unsat ,(show-pstat pstat state))
+         :exit  `(dag-epsilon-unsat ,(nth 0 values))
+         ))
+
 #+joe
 (thm
  (IMPLIES (AND (< 0 J)
@@ -254,47 +263,6 @@
                (NOT (OR (EQUAL (NFIX J) 0) (< (IFIX I) J))))
           (<= 0 (+ I (- J))))
  )
-
-#+badboy
-(DAG-ADD-POLYS1
-   '((((((I . 1)) NIL) -1 <= T)))
-   '(((0) I (((((I . 1)) NIL) 0 <= T)))
-     ((0 (((((J . -1) (I . 1)) NIL) 0 <= T))
-       (((((J . -1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL))) 0 <=
-         T)))
-      J (((((J . 1)) NIL) 0 <= T)))))
-
-(trace$ (ignore-polyp
-         :entry `(ignore-polyp)
-         :exit  `(ignore-polyp ,(nth 0 values))))
-
-#+incomplete
-(DAG-ADD-POLYS1
-   '(((((((LEN SEQ1) . 1)) NIL (LEMMA (:TYPE-PRESCRIPTION LEN))) 0 <=
-       T)))
-   '(((0) START2
-      (((((START2 . 1)) NIL
-         (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
-          (:TYPE-PRESCRIPTION LEN)))
-        -1 <= T))
-      (((((START2 . 1)) NIL
-         (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
-          (:TYPE-PRESCRIPTION LEN)))
-        0 <= T)))
-     ((0
-       ((((((LEN SEQ1) . -1) (START2 . -1) (END2 . 1)) NIL
-          (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
-           (:TYPE-PRESCRIPTION LEN)))
-         0 <= T))
-       ((((((LEN SEQ1) . -1)) NIL
-          (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
-           (:TYPE-PRESCRIPTION LEN)))
-         -1 <= T)))
-      (LEN SEQ1))
-     ((0) (LEN SEQ2)
-      ((((((LEN SEQ2) . 1) (END2 . -1)) NIL
-         (LEMMA (:TYPE-PRESCRIPTION LEN)))
-        0 <= T)))))
 
 #+joe
 (thm
@@ -310,3 +278,80 @@
    (< 0 (+ y -1))
    )
   nil))
+
+(let ((unsat (DAG-ADD-POLYS1
+              '((((((I . 1)) NIL) -1 <= T)))
+              '(((0) I (((((I . 1)) NIL) 0 <= T)))
+                ((0 (((((J . -1) (I . 1)) NIL) 0 <= T))
+                    (((((J . -1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL))) 0 <=
+                      T)))
+                 J (((((J . 1)) NIL) 0 <= T)))))))
+  (assert$ (not unsat) nil))
+
+(let ((unsat (DAG-ADD-POLYS1
+              '(((((((LEN SEQ1) . 1)) NIL (LEMMA (:TYPE-PRESCRIPTION LEN))) 0 <=
+                  T)))
+              '(((0) START2
+                 (((((START2 . 1)) NIL
+                    (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
+                           (:TYPE-PRESCRIPTION LEN)))
+                   -1 <= T))
+                 (((((START2 . 1)) NIL
+                    (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
+                           (:TYPE-PRESCRIPTION LEN)))
+                   0 <= T)))
+                ((0
+                  ((((((LEN SEQ1) . -1) (START2 . -1) (END2 . 1)) NIL
+                     (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
+                            (:TYPE-PRESCRIPTION LEN)))
+                    0 <= T))
+                  ((((((LEN SEQ1) . -1)) NIL
+                     (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
+                            (:TYPE-PRESCRIPTION LEN)))
+                    -1 <= T)))
+                 (LEN SEQ1))
+                ((0) (LEN SEQ2)
+                 ((((((LEN SEQ2) . 1) (END2 . -1)) NIL
+                    (LEMMA (:TYPE-PRESCRIPTION LEN)))
+                   0 <= T)))))))
+  (assert$ unsat nil))
+
+(let ((unsat (DAG-ADD-POLYS1
+              '((((((Z . -1) (Y . 1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+                  0 <= T))
+                (((((Z . 1) (Y . -1) (W . -1)) NIL
+                   (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+                  0 < T))
+                (((((W . 1)) NIL) 0 < T)) (((((Y . 1)) NIL) 0 < T)))
+              'NIL)))
+  (assert$ unsat nil))
+
+#+unsound
+(DAG-ADD-POLYS1
+   '(((((((MOD (BINARY-+ X Y) Z) . 1)) NIL
+        (LEMMA (:TYPE-PRESCRIPTION MOD-TYPE . 4)
+         (:TYPE-PRESCRIPTION RATIONALP-MOD)
+         (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+       0 <= T)))
+   '(((0) X
+      (((((X . 1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL))) 0 < T))
+      (((((X . 1)) NIL) 0 <= T)))
+     ((0) Y
+      (((((Y . 1) (X . 1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+        0 < T))
+      (((((Y . 1)) NIL (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL))) 0 < T))
+      (((((Y . 1)) NIL) 0 <= T)))
+     ((0
+       (((((Z . -1) (Y . 1) (X . 1)) NIL
+          (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+         0 <= T)))
+      Z (((((Z . 1) (X . -1)) NIL) 0 < T))
+      (((((Z . 1) (Y . -1)) NIL) 0 < T)) (((((Z . 1)) NIL) 0 < T)))
+     ((0
+       ((((((MOD (BINARY-+ X Y) Z) . -1) (Z . -1) (Y . 1) (X . 1))
+          NIL
+          (LEMMA (:TYPE-PRESCRIPTION MOD-TYPE . 4)
+           (:TYPE-PRESCRIPTION RATIONALP-MOD)
+           (:FAKE-RUNE-FOR-TYPE-SET NIL)))
+         0 < T)))
+      (MOD (BINARY-+ X Y) Z))))
