@@ -3241,7 +3241,7 @@
           ((true-polyp p) (mv nil nil))
           (t (mv nil p)))))
 
-(defun cancel-poly-against-all-polys (p polys pt ans)
+(defun cancel-poly-against-all-polys (p polys pt ans incomplete)
 
 ; P is a poly, polys is a list of polys, the first var of p is the same
 ; as the first of every poly in polys and has opposite sign.  We are to
@@ -3258,14 +3258,14 @@
 ; accumulate the new polys.  This is a No-Change Loser.
 
   (cond ((null polys)
-         (mv nil ans))
+         (mv nil ans incomplete))
         ((ignore-polyp (access poly (car polys) :parents) pt)
          (cancel-poly-against-all-polys p (cdr polys)
-                                        pt ans))
+                                        pt ans t))
         (t (mv-let (contradictionp new-p)
              (cancel p (car polys))
              (cond (contradictionp
-                    (mv contradictionp nil))
+                    (mv contradictionp nil incomplete))
                    (t
                     (cancel-poly-against-all-polys
                      p
@@ -3278,7 +3278,8 @@
                      (if (and new-p
                               (not (poly-member new-p ans)))
                          (cons new-p ans)
-                       ans))))))))
+                       ans)
+                     incomplete)))))))
 
 ; Historical note:
 
@@ -3332,7 +3333,7 @@
 ; add polys to the pot list from a depth-first search to a
 ; breadth-first search.
 
-(defun add-poly (p pot-lst to-do-next pt nonlinearp)
+(defun add-poly (p pot-lst to-do-next pt nonlinearp incomplete)
 
 ; This is the fundamental function for changing a pot-lst.  It adds a
 ; single poly p to pot-lst.  All the other functions which construct
@@ -3377,7 +3378,7 @@
   (cond
    ((time-limit5-reached-p
      "Out of time in linear arithmetic (add-poly).") ; nil, or throws
-    (mv nil nil nil))
+    (mv nil nil nil t))
    ((or (null pot-lst)
         (not (arith-term-order (access linear-pot (car pot-lst) :var)
                                (first-var p))))
@@ -3394,7 +3395,8 @@
                       :positives nil
                       :negatives (list p)))
               pot-lst)
-        to-do-next))
+        to-do-next
+        incomplete))
    ((equal (access linear-pot (car pot-lst) :var)
            (first-var p))
     (cond
@@ -3402,17 +3404,18 @@
                    (if (< 0 (first-coefficient p))
                        (access linear-pot (car pot-lst) :positives)
                      (access linear-pot (car pot-lst) :negatives)))
-      (mv nil pot-lst to-do-next))
-     (t (mv-let (contradictionp to-do-next)
+      (mv nil pot-lst to-do-next incomplete))
+     (t (mv-let (contradictionp to-do-next incomplete)
           (cancel-poly-against-all-polys
            p
            (if (< 0 (first-coefficient p))
                (access linear-pot (car pot-lst) :negatives)
              (access linear-pot (car pot-lst) :positives))
            pt
-           to-do-next)
+           to-do-next
+           incomplete)
           (cond
-           (contradictionp (mv contradictionp nil nil))
+           (contradictionp (mv contradictionp nil nil incomplete))
 
 ; Non-linear optimization
 ; Magic number.  If non-linear arithmetic is enabled, and there are
@@ -3436,7 +3439,7 @@
                          21))
             (mv nil
                 pot-lst
-                to-do-next))
+                to-do-next t))
            (t (mv nil
                   (cons
                    (if (< 0 (first-coefficient p))
@@ -3449,15 +3452,16 @@
                              (cons p (access linear-pot (car pot-lst)
                                              :negatives))))
                    (cdr pot-lst))
-                  to-do-next)))))))
+                  to-do-next
+                  incomplete)))))))
    (t
     (mv-let
-      (contradictionp cdr-pot-lst to-do-next)
-      (add-poly p (cdr pot-lst) to-do-next pt nonlinearp)
+      (contradictionp cdr-pot-lst to-do-next incomplete)
+      (add-poly p (cdr pot-lst) to-do-next pt nonlinearp incomplete)
       (cond
-       (contradictionp (mv contradictionp nil nil))
+       (contradictionp (mv contradictionp nil nil incomplete))
        (t
-        (mv nil (cons (car pot-lst) cdr-pot-lst) to-do-next)))))))
+        (mv nil (cons (car pot-lst) cdr-pot-lst) to-do-next incomplete)))))))
 
 (defun prune-poly-lst (poly-lst ans)
   (cond ((null poly-lst)
@@ -3468,7 +3472,7 @@
          (prune-poly-lst (cdr poly-lst) ans))))
 
 (defun add-polys1 (lst pot-lst new-lst pt nonlinearp max-rounds
-                       rounds-completed)
+                       rounds-completed incomplete)
 
 ; This function adds every element of the poly list lst to pot-lst and
 ; accumulates the new polys in new-lst.  When lst is exhausted it
@@ -3477,10 +3481,10 @@
 ; the first and the final pot-lst in the second.
 
   (cond ((eql max-rounds rounds-completed)
-         (mv nil pot-lst))
+         (mv nil pot-lst t))
         ((null lst)
          (cond ((null new-lst)
-                (mv nil pot-lst))
+                (mv nil pot-lst incomplete))
 
 ; Non-linear optimization
 ; Magic number.  If non-linear arithmetic is enabled, and there are
@@ -3496,21 +3500,22 @@
                      (>=-len new-lst 101))
                 (add-polys1 (prune-poly-lst new-lst nil)
                             pot-lst nil pt nonlinearp
-                            max-rounds (+ 1 rounds-completed)))
+                            max-rounds (+ 1 rounds-completed) t))
                (t
                 (add-polys1 new-lst pot-lst nil
                             pt nonlinearp
-                            max-rounds (+ 1 rounds-completed)))))
-        (t (mv-let (contradictionp new-pot-lst new-lst)
-             (add-poly (car lst) pot-lst new-lst pt nonlinearp)
-             (cond (contradictionp (mv contradictionp nil))
+                            max-rounds (+ 1 rounds-completed) incomplete))))
+        (t (mv-let (contradictionp new-pot-lst new-lst incomplete)
+             (add-poly (car lst) pot-lst new-lst pt nonlinearp incomplete)
+             (cond (contradictionp (mv contradictionp nil incomplete))
                    (t (add-polys1 (cdr lst)
                                   new-pot-lst
                                   new-lst
                                   pt
                                   nonlinearp
                                   max-rounds
-                                  rounds-completed)))))))
+                                  rounds-completed
+                                  incomplete)))))))
 
 ; dag - LP support
 
@@ -3524,10 +3529,7 @@
   )
 
 ; dag
-(defrec zeros (originals . zvectors) t)
-
-; dag
-(defrec pstat (sln zeros plist) t)
+(defrec pstat (sln zlist plist) t)
 
 (defun dag-self-dot-alist (alist1 dot)
   (if (not (consp alist1)) dot
@@ -3572,7 +3574,7 @@
         (cons (cons (caar alist1) value)
               (dag-scale-and-add-alists (cdr alist1) (cdr alist2) coeff)))))
    (t
-    (cons (car alist2) (dag-scale-and-add-alists alist1 (cdr alist2) coeff)))))
+    (cons (cons (caar alist2) (* coeff (cdar alist2))) (dag-scale-and-add-alists alist1 (cdr alist2) coeff)))))
 
 (defun dag-dot-vectors (v1 v2)
   (dag-dot-alist (access poly v1 :alist) (access poly v2 :alist) 0))
@@ -3616,21 +3618,21 @@
 (defun dag-poly-to-vector (poly)
   (change poly poly :constant 0))
 
-(defun dag-remove-zvectors-from-vector1 (zvectors vector)
+(defun dag-remove-opposing-zvectors-from-vector1 (zvectors vector)
   (if (not (consp zvectors)) vector
     (let ((zref (car zvectors)))
       (let ((dot (dag-dot-vectors zref vector)))
-        (if (= 0 dot) (dag-remove-zvectors-from-vector1 (cdr zvectors) vector)
+        (if (= 0 dot) (dag-remove-opposing-zvectors-from-vector1 (cdr zvectors) vector)
           (let ((coeff (/ (- dot) (dag-self-dot zref))))
             ;; zref * (vector + coeff*zref) = 0
             ;; zref*vector + coeff*zref^2 = 0
             ;; coeff= (- (vector*zref))/(zref^2)
             ;; coeff = (- dot)/1.0
             (let ((vector (dag-scale-and-add-vectors vector zref coeff)))
-              (dag-remove-zvectors-from-vector1 (cdr zvectors) vector))))))))
+              (dag-remove-opposing-zvectors-from-vector1 (cdr zvectors) vector))))))))
 
-(defun dag-remove-zvectors-from-vector (zvectors vector)
-  (dag-remove-zvectors-from-vector1 zvectors vector))
+(defun dag-remove-opposing-zvectors-from-vector (zvectors vector)
+  (dag-remove-opposing-zvectors-from-vector1 zvectors vector))
 
 (defun dag-zero-vectorp (vector)
   (= (len (access poly vector :alist)) 0))
@@ -3639,76 +3641,78 @@
   (declare (ignore score))
   (change pstat pstat :plist (cons poly (access pstat pstat :plist))))
 
-(defun dag-insert-positive-poly-list (list plist)
-  (revappend list plist))
+(defun dag-insert-positive-poly-list (list pstat)
+  (change pstat pstat :plist (revappend list (access pstat pstat :plist))))
 
 (defun dag-insert-zero-poly (poly pstat)
-  (let ((zeros (access pstat pstat :zeros)))
-    (let ((originals (access zeros zeros :originals))
-          (zvectors  (access zeros zeros :zvectors)))
-      (let ((vector (dag-poly-to-vector poly)))
-        (let ((vector (dag-remove-zvectors-from-vector zvectors vector)))
-          ;; Yeah .. so this would happen if any motion on the
-          ;; vector would violate the existing zvectors.  But it
-          ;; will also happen if vector is subsumed by the current basis.
-          (if (dag-zero-vectorp vector) 
-              (change pstat pstat :zeros (change zeros zeros :originals (cons poly originals)))
-            (change pstat pstat :zeros (make zeros
-                                             :originals (cons poly originals)
-                                             :zvectors    (cons vector zvectors)))))))))
+  (change pstat pstat :zlist (cons poly (access pstat pstat :zlist))))
 
 (defun dag-insert-zero-poly-list (list pstat)
-  (if (not (consp list)) pstat
-    (let ((pstat (dag-insert-zero-poly (car list) pstat)))
-      (dag-insert-zero-poly-list (cdr list) pstat))))
+  (change pstat pstat :zlist (revappend list (access pstat pstat :zlist))))
 
-(defun dag-unexpected (term)
-  (declare (ignorable term))
-  nil)
+(defun dag-reconsider-negatives (vector list nlist plist)
+  (if (not (consp list)) (mv nlist plist)
+    (let ((dot (dag-dot-vectors vector (car list))))
+      (if (<= 0 dot) (dag-reconsider-negatives vector (cdr list) nlist (cons (car list) plist))
+        (dag-reconsider-negatives vector (cdr list) (cons (car list) nlist) plist)))))
+
+;; remove negative vectors
+;; 
+(defun dag-remove-opposing-polys-from-vector (vector xlist zbasis zlist nnlist)
+  (if (not (consp xlist)) (mv nil vector zbasis zlist nnlist)
+    (let ((xref (car xlist)))
+      (let ((xvec (dag-poly-to-vector xref)))
+        (let ((xvec (dag-remove-opposing-zvectors-from-vector zbasis xvec)))
+          (if (dag-zero-vectorp xvec)
+              (dag-remove-opposing-polys-from-vector vector (cdr xlist) zbasis (cons xref zlist) nnlist)
+            (let ((dot (dag-dot-vectors vector xvec)))
+              (if (<= 0 dot) (dag-remove-opposing-polys-from-vector vector (cdr xlist) zbasis zlist (cons xref nnlist))
+                (let ((zbasis (cons xvec zbasis))
+                      (zlist  (cons xref zlist)))
+                  ;; We need to re-consider elements of nnlist that might
+                  ;; oppose the updated vector.  Given that they
+                  ;; previously didn't oppose it, the only way they can
+                  ;; now is to oppose the new vector component.
+                  (mv-let (pnlist znlist xlist) (dag-score-list :vectors nnlist (access poly xvec :alist) nil nil (cdr xlist))
+                    (let ((nnlist (revappend znlist pnlist)))
+                      ;; xvec * (vector + coeff*xvec) = 0
+                      ;; xvec * vector + coeff * xvec^2 = 0
+                      ;; coeff = (- xvec * vector) / xvec^2
+                      ;; coeff = (- dot)/xvec^2
+                      (let ((coeff (/ (- dot) (dag-self-dot xvec))))
+                        (let ((vector (dag-scale-and-add-vectors vector xvec coeff)))
+                          (if (dag-zero-vectorp vector)  (mv vector vector zbasis zlist nnlist)
+                            (dag-remove-opposing-polys-from-vector vector xlist zbasis zlist nnlist)))))))))))))))
+
+(defun dag-remove-opposing-polys-from-vector-list (list xlist zbasis)
+  (if (not (consp list)) nil
+    (let ((vector (car list)))
+      (let ((vector (dag-remove-opposing-zvectors-from-vector zbasis vector)))
+        (if (dag-zero-vectorp vector) vector
+          (mv-let (unsat vector zbasis zlist xlist) (dag-remove-opposing-polys-from-vector vector xlist zbasis nil nil)
+            (declare (ignore vector zlist))
+            (or unsat
+                (dag-remove-opposing-polys-from-vector-list (cdr list) xlist zbasis))))))))
 
 (defun dag-insert-negative-poly (score poly pstat)
-  (let ((zeros (access pstat pstat :zeros))
+  (let ((zlist (access pstat pstat :zlist))
         (plist (access pstat pstat :plist))
         (sln   (access pstat pstat :sln)))
-    (let ((originals (access zeros zeros :originals))
-          (zvectors  (access zeros zeros :zvectors)))
-      (let ((vector (dag-poly-to-vector poly)))
-        ;; poly's score is currently negative.  We need to move the solution vector
-        ;; in the direction of poly's vector to try to make it positive.  When we
-        ;; do so, however, we are going to disrupt the current zero vector set.
-        ;; If we score the zvectors w/to poly's vector we see 3 results:
-        ;; - pzvectors: after the move, these will be positive.
-        ;; - zzvectors: these will remain unchanged
-        ;; - nzvectors: these would become negative .. but we cannot allow that
-        ;;              to happen .. so we remove these vectors from poly's vector.
-        ;; Note: the zvectors are orthoganal.
-        (mv-let (pzvectors zzvectors nzvectors) (dag-score-list :vectors zvectors (access poly vector :alist) nil nil nil)
-          ;; Remove from vector all the negative components
-          (let ((vector (dag-remove-zvectors-from-vector nzvectors vector)))
-            ;; After the move, this will be our new set of zero vectors
-            (let ((zvectors (revappend zzvectors nzvectors)))
-              ;; Oops .. this is a contradiction .. we need to change
-              ;; the solution but our nzvectors will not allow it ..
-              ;; so we are done.
-              (if (dag-zero-vectorp vector) (mv vector nil pstat)
-                (mv-let (new-plist originals new-nlist) (dag-score-list :vectors originals (access poly vector :alist) pzvectors nil nil)
-                  ;; (poly * (sln + coeff*vector)) = poly*sln + coeff*poly*vector = 0 
-                  ;; coeff = (- poly*sln)/(poly*vector) 
-                  ;;       = (- score)/vector^2
-                  (let ((coeff (/ (- score) (dag-self-dot vector))))
-                    (let ((sln (dag-scale-and-add-vector-to-sln sln vector coeff)))
-                      (mv-let (plist zlist nlist) (dag-score-list :vectors plist (access poly vector :alist) new-plist nil nil)
-                        (let ((plist (revappend zlist plist))) 
-                          (mv-let (plist zlist nlist) (dag-score-list :polys nlist sln plist nil new-nlist)
-                            (let ((plist (revappend zlist plist))) 
-                              (let ((zeros (make zeros 
-                                                 :originals (cons poly originals)
-                                                 :zvectors  (cons vector zvectors))))
-                                (let ((pstat (make pstat
-                                                   :sln   sln
-                                                   :zeros zeros
-                                                   :plist plist)))
-                                  (mv nil nlist pstat))))))))))))))))))
+    (let ((vector (dag-poly-to-vector poly)))
+      (mv-let (unsat vector zbasis new-zlist nnlist) (dag-remove-opposing-polys-from-vector vector zlist nil nil nil)
+        (declare (ignore zbasis))
+        (if unsat (mv unsat nil pstat)
+          ;; (poly * (sln + coeff*vector)) = poly*sln + coeff*poly*vector = 0 
+          ;; coeff = (- poly*sln)/(poly*vector) 
+          ;;       = (- score)/vector^2
+          (let ((coeff (/ (- score) (dag-self-dot vector))))
+            (let ((sln (dag-scale-and-add-vector-to-sln sln vector coeff)))
+              (mv-let (plist zlist nlist) (dag-score-list :polys (revappend nnlist plist) sln nil new-zlist nil)
+              (let ((pstat (make pstat
+                                 :sln   sln
+                                 :zlist (cons poly zlist)
+                                 :plist plist)))
+                (mv nil nlist pstat))))))))))
 
 (defun dag-add-poly (poly pstat)
   (let ((score (dag-score-poly poly pstat)))
@@ -3716,40 +3720,12 @@
       (if (= 0 score) (mv nil nil (dag-insert-zero-poly poly pstat))
         (dag-insert-negative-poly score poly pstat)))))
 
-(defun dag-add-poly-list (polys pstat)
-  (if (not (consp polys)) (mv nil pstat)
-    (mv-let (unsat new-polys pstat) (dag-add-poly (car polys) pstat)
-      (if (not unsat) (dag-add-poly-list (revappend new-polys (cdr polys)) pstat)
-        (mv unsat pstat)))))
-
-(defun dag-new-zeros ()
-  (make zeros
-        :originals nil
-        :zvectors nil))
-
-(defun dag-new-pstat ()
-  (make pstat
-        :sln nil
-        :zeros (dag-new-zeros)
-        :plist nil))
-
-(defun dag-add-linear-pot (pot-lst pstat)
-  (declare (xargs :mode :program))
-  (if (not (consp pot-lst)) (mv nil pstat)
-    (let ((pot (car pot-lst)))
-      (mv-let (unsat pstat) (dag-add-poly-list (access linear-pot pot :negatives) pstat)
-        (if unsat (mv unsat pstat)
-          (mv-let (unsat pstat) (dag-add-poly-list (access linear-pot pot :positives) pstat)
-            (if unsat (mv unsat pstat)
-              (dag-add-linear-pot (cdr pot-lst) pstat))))))))
-
-(defun dag-add-strict-vectors (vectors vres)
-  (if (not (consp vectors)) vres
+(defun dag-collect-strict-vectors (vectors)
+  (if (not (consp vectors)) nil
     (let ((vector (car vectors)))
-      (let ((vres (if (eq (access poly vector :relation) '<)
-                      (dag-scale-and-add-vectors vres vector 1)
-                    vres)))
-        (dag-add-strict-vectors (cdr vectors) vres)))))
+      (if (eq (access poly vector :relation) '<)
+          (cons vector (dag-collect-strict-vectors (cdr vectors)))
+        (dag-collect-strict-vectors (cdr vectors))))))
 
 (defun dag-epsilon-unsat (pstat)
   ;;
@@ -3767,43 +3743,93 @@
   ;; - Reduce them by the zvector set
   ;; - If both are unsat, no epsilon coefficient exits.
   ;;
-  (let ((zeros (access pstat pstat :zeros)))
-    (let ((zvectors (access zeros zeros :zvectors)))
-      (let ((strict-vector (dag-add-strict-vectors zvectors nil)))
-        (let ((originals (access zeros zeros :originals)))
-          (mv-let (plist zlist nlist) (dag-score-list :vectors originals (access poly strict-vector :alist) nil nil nil)
-            (declare (ignore plist zlist))
-            (if (not (consp nlist)) nil
-              (dag-scale-and-add-vectors (car nlist) strict-vector 1))))))))
+  (let ((zlist (access pstat pstat :zlist)))
+    (let ((nlist (dag-collect-strict-vectors zlist)))
+      (dag-remove-opposing-polys-from-vector-list nlist zlist nil))))
+
+(defun dag-new-pstat ()
+  (make pstat
+        :sln nil
+        :zlist nil
+        :plist nil))
+
+(defun dag-check-pstat (pstat)
+  (let ((zlist (access pstat pstat :zlist))
+        (plist (access pstat pstat :plist))
+        (sln   (access pstat pstat :sln)))
+    (mv-let (x y z) (dag-score-list :polys zlist sln nil nil nil)
+            (declare (ignore y))
+            (mv-let (a b c) (dag-score-list :polys plist sln nil nil nil)
+                    (declare (ignore a))
+                    (and (not (consp x)) (not (consp z))
+                         (not (consp b)) (not (consp c)))))))
+
+(defun dag-add-poly-list (polys pstat bad)
+  (if (not (consp polys)) (mv nil pstat bad)
+    (mv-let (unsat new-polys pstat) (dag-add-poly (car polys) pstat)
+      (let ((bad (or bad (not (dag-check-pstat pstat)))))
+        (if (not unsat) (dag-add-poly-list (revappend new-polys (cdr polys)) pstat bad)
+          (mv unsat pstat bad))))))
+
+(defun dag-add-linear-pot (pot-lst pstat bad)
+  (declare (xargs :mode :program))
+  (if (not (consp pot-lst)) (mv nil pstat bad)
+    (let ((pot (car pot-lst)))
+      (mv-let (unsat pstat bad) (dag-add-poly-list (access linear-pot pot :negatives) pstat bad)
+        (if unsat (mv unsat pstat bad)
+          (mv-let (unsat pstat bad) (dag-add-poly-list (access linear-pot pot :positives) pstat bad)
+            (if unsat (mv unsat pstat bad)
+              (dag-add-linear-pot (cdr pot-lst) pstat bad))))))))
 
 (defun dag-add-polys1 (lst pot-lst)
-  (mv-let (unsat pstat) (dag-add-linear-pot pot-lst (dag-new-pstat))
-          (or unsat
-              (mv-let (unsat pstat) (dag-add-poly-list lst pstat)
-                      (or unsat
-                          (dag-epsilon-unsat pstat))))))
+  (mv-let (unsat pstat bad) (dag-add-linear-pot pot-lst (dag-new-pstat) nil)
+          (let ((zed (and bad (dag-log-form (list "bad boy" `(dag-add-polys1 ',lst ',pot-lst))))))
+            (declare (ignore zed))
+            (or unsat
+                (mv-let (unsat pstat bad) (dag-add-poly-list lst pstat nil)
+                        (let ((zed (and bad (dag-log-form (list "bad boy" `(dag-add-polys1 ',lst ',pot-lst))))))
+                          (declare (ignore zed))
+                          (or unsat
+                              (dag-epsilon-unsat pstat))))))))
 
-#+joe
-(defun add-polys0 (lst pot-lst pt nonlinearp max-rounds)
+(defun dag-poisoned-pot (pot-lst)
+  (and (consp pot-lst)
+       (let ((pot (car (last pot-lst))))
+         (not (access linear-pot pot :var)))))
+
+(defun dag-poison-pot (newly-incomplete pot-lst)
+  (if (not newly-incomplete) pot-lst
+    (append pot-lst (list (make linear-pot :var nil)))))
+
+(defun dag-add-polys0 (lst pot-lst pt nonlinearp max-rounds)
 ; Lst is a list of polys.  We filter out the true ones (and detect any
 ; impossible ones) and then normalize and add the rest to pot-lst.
 ; Any new polys thereby produced are also added until there's nothing
 ; left to do.  We return the standard contradictionp and a new pot-lst.
-  (mv-let (contradictionp lst) (filter-polys lst nil)
-    (cond 
-     (contradictionp (mv contradictionp nil))
-     (t
-      (let ((unsat (dag-add-polys1 lst pot-lst)))
-        (mv-let (contradictionp lst) (add-polys1 lst pot-lst nil pt nonlinearp max-rounds 0)
-          (let ((zed (cond
-                      ((and unsat (not contradictionp))
-                       (dag-log-form (list "unsound" lst pot-lst)))
-                      ((and (not unsat) contradictionp)
-                       (dag-log-form (list "incomplete" lst pot-lst)))
-                      (t nil))))
-            (declare (ignore zed))
-            (mv contradictionp lst))))))))
+  (let ((poisoned (dag-poisoned-pot pot-lst)))
+    (mv-let (contradictionp lst) (filter-polys lst nil)
+      (cond 
+       (contradictionp (mv contradictionp nil))
+       (t
+        (let ((unsat (dag-add-polys1 lst pot-lst)))
+          (mv-let (contradictionp nlst incomplete) (add-polys1 lst pot-lst nil pt nonlinearp max-rounds 0 poisoned)
+            (let ((zed (cond
+                        ((and unsat (not incomplete) (not contradictionp))
+                         (dag-log-form (list "unsound" unsat  contradictionp `(dag-add-polys1 ',lst ',pot-lst)
+                                             `(add-polys1 ',lst ',pot-lst nil ',pt ',nonlinearp ',max-rounds 0 nil))))
+                        ((and unsat incomplete (not contradictionp))
+                         (dag-log-form (list "bam!")))
+                        ((and (not unsat) contradictionp)
+                         (dag-log-form (list "incomplete" unsat contradictionp `(dag-add-polys1 ',lst ',pot-lst)
+                                             `(add-polys1 ',lst ',pot-lst nil ',pt ',nonlinearp ',max-rounds 0 nil))))
+                        (t nil))))
+              (declare (ignore zed))
+              (mv contradictionp (dag-poison-pot (and (not poisoned) incomplete) nlst))))))))))
   
+(defun add-polys0 (lst pot-lst pt nonlinearp max-rounds)
+  (dag-add-polys0 lst pot-lst pt nonlinearp max-rounds))
+
+#+joe
 (defun add-polys0 (lst pot-lst pt nonlinearp max-rounds)
 
 ; Lst is a list of polys.  We filter out the true ones (and detect any
@@ -3814,7 +3840,10 @@
   (mv-let (contradictionp lst)
     (filter-polys lst nil)
     (cond (contradictionp (mv contradictionp nil))
-          (t (add-polys1 lst pot-lst nil pt nonlinearp max-rounds 0)))))
+          (t (mv-let (contradictionp pot-lst incomplete)
+               (add-polys1 lst pot-lst nil pt nonlinearp max-rounds 0 nil)
+               (declare (ignore incomplete))
+               (mv contradictionp pot-lst))))))
 
 ;=================================================================
 
