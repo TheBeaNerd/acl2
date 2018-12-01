@@ -356,17 +356,50 @@
          ))
 
 ;;#+joe
+(trace$ (dag-remove-vector-zdb
+         :entry `(dag-remove-vector-zdb
+                  ,(show-vector vector state)
+                  ,(show-zdb zdb state)
+                  )
+         :exit  `(dag-remove-vector-zdb
+                  ,(show-zdb (nth 0 values) state)
+                  ,(nth 1 values)
+                  )
+         ))
+
+;;#+joe
+(trace$ (dag-insert-zero-poly-zdb
+         :entry `(dag-insert-zero-poly-zdb
+                  ,(show-vector poly state)
+                  ,(show-zdb zdb state)
+                  )
+         :exit  `(dag-insert-zero-vector-zdb
+                  ,(show-zdb (nth 0 values) state)
+                  )
+         ))
+
+;;#+joe
 (trace$ (DAG-ADD-POLY
          :entry `(DAG-ADD-POLY ,(show-vector poly state) ,(show-pstat pstat state))
          :exit  `(DAG-ADD-POLY ,(nth 0 values) 
                                ,(show-vector-list (nth 1 values) state)
                                ,(show-pstat (nth 2 values) state)
+                               ,(nth 3 values)
                                )
+         ))
+
+#+joe
+(trace$ (DAG-ADD-POLY-list
+         :entry `(DAG-ADD-POLY-list ,(show-vector-list polys state) ,(show-pstat pstat state) ,bad)
+         :exit  `(DAG-ADD-POLY-list ,(nth 0 values) 
+                                    ,(show-pstat (nth 1 values) state)
+                                    ,(nth 2 values)
+                                    )
          ))
 
 ;;#+joe
 (trace$ (DAG-ADD-POLYS1
-         :entry `(DAG-ADD-POLYS1 ,(show-vector-list lst state) ,(untranslate `(poly-pot ,@(poly-pot-list pot-lst)) nil (w state)))
+         :entry `(DAG-ADD-POLYS1 ,(show-vector-list lst state) ,(untranslate `(poly-pot ,@(poly-pot-lst pot-lst)) nil (w state)))
          :exit  `(DAG-ADD-POLYS1 ,(nth 0 values))
          ))
 
@@ -382,9 +415,9 @@
 
 #+joe
 (trace$ (ADD-POLY
-         :entry `(ACL2-ADD-POLY ,(show-vector p state) ,(untranslate `(poly-pot ,@(poly-pot-list pot-lst)) nil (w state)) ,incomplete)
+         :entry `(ACL2-ADD-POLY ,(show-vector p state) ,(untranslate `(poly-pot ,@(poly-pot-lst pot-lst)) nil (w state)) ,incomplete)
          :exit  `(ACL2-ADD-POLY ,(nth 0 values)
-                                ,(untranslate `(poly-pot ,@(poly-pot-list (nth 1 values))) nil (w state))
+                                ,(untranslate `(poly-pot ,@(poly-pot-lst (nth 1 values))) nil (w state))
                                 ,(show-vector-list (nth 2 values) state)
                                 ,(nth 3 values)
                                 )
@@ -392,7 +425,7 @@
 
 #+joe
 (trace$ (ADD-POLYS1
-         :entry `(ACL2-ADD-POLYS1 ,(show-vector-list lst state) ,(untranslate `(poly-pot ,@(poly-pot-list pot-lst)) nil (w state)) ,incomplete)
+         :entry `(ACL2-ADD-POLYS1 ,(show-vector-list lst state) ,(untranslate `(poly-pot ,@(poly-pot-lst pot-lst)) nil (w state)) ,incomplete)
          :exit  `(ACL2-ADD-POLYS1 ,(nth 0 values) ,(nth 2 values))
          ))
 
@@ -785,7 +818,7 @@
   nil))
 
 
-(let ((unsat (DAG-ADD-POLYS1
+(let ((unsat7 (DAG-ADD-POLYS1
               '((((((Y . 1)) (5 4) (PT 4 5)) 0 <= T)))
               '(((0) X (((((X . 1)) (3) (PT 2 3)) 0 <= T)))
                 ((0) Y
@@ -812,8 +845,9 @@
                            (:TYPE-PRESCRIPTION RATIONALP-MOD)
                            (:FAKE-RUNE-FOR-TYPE-SET NIL)))
                    0 < T)))))))
-  unsat)
+  unsat7)
 
+#+joe
 (let ((unsound (DAG-ADD-POLYS1
                 '((((((START2 . 1)) NIL
                      (LEMMA (:FAKE-RUNE-FOR-TYPE-SET NIL)
@@ -841,6 +875,7 @@
                    (LEN (COERCE SEQ1 'LIST)))))))
   (assert$ (not unsound) nil))
 
+#+joe
 (let ((incomplete (DAG-ADD-POLYS1
    '(((((((LEN X) . -1) (N . 1)) NIL) 0 < NIL)))
    '(((0) (LEN X)
@@ -853,3 +888,91 @@
           (:COMPOUND-RECOGNIZER ZP-COMPOUND-RECOGNIZER)))
         0 <= T)))))))
   (assert$ incomplete nil))
+
+#+joe
+(THM (IMPLIES (AND (rationalp A)
+              (rationalp B)
+              (rationalp C)
+              (rationalp N)
+              (<= 0
+                  (+ (* -1 B)
+                     A
+                     (* -1 N)
+                     0))
+              (<= 0 (+ N -1))
+              (<= 0 (+ A 0))
+              (<= 0 (+ A (* -1 N) 1))
+              (<= 0 (+ B 0))
+              (<= 0 (+ (* -1 C)
+                       B
+                       0))
+              (<= 0 (+ C 0)))
+         (< (+ C (* -1 B)
+               0)
+            0)))
+
+;;#+joe
+(THM (IMPLIES (AND (AND (NOT (<
+                              (BINARY-+
+                               (BINARY-*
+                                '-1
+                                (LEN
+                                 (NTHCDR (BINARY-+ N '-1) (CDR X))))
+                               (BINARY-+
+                                (LEN (CDR X))
+                                (BINARY-+ (BINARY-* '-1 N) '0)))
+                              '0)))
+                   (AND (NOT (< (BINARY-+ N '-1) '0))
+                        (NOT (< (BINARY-+ (LEN (CDR X)) '0) '0))
+                        (NOT (<
+                              (BINARY-+
+                               (LEN (CDR X))
+                               (BINARY-+ (BINARY-* '-1 N) '1))
+                              '0))
+                        (NOT (<
+                              (BINARY-+
+                               (LEN
+                                (NTHCDR (BINARY-+ N '-1) (CDR X)))
+                               '0)
+                              '0))
+                        (NOT (<
+                              (BINARY-+
+                               (LEN
+                                (NTHCDR (BINARY-+ N '-1) (CDR X)))
+                               '0)
+                              '0))
+                        (NOT (<
+                              (BINARY-+
+                               (BINARY-*
+                                '-1
+                                (NFIX
+                                 (BINARY-+
+                                  (LEN (CDR X))
+                                  (UNARY-- (BINARY-+ '-1 N)))))
+                               (BINARY-+
+                                (LEN
+                                 (NTHCDR (BINARY-+ N '-1) (CDR X)))
+                                '0))
+                              '0))
+                        (NOT (<
+                              (BINARY-+
+                               (NFIX
+                                (BINARY-+
+                                 (LEN (CDR X))
+                                 (UNARY-- (BINARY-+ '-1 N))))
+                               '0)
+                              '0))
+                        (NOT (<
+                              (BINARY-+
+                               (NFIX
+                                (BINARY-+
+                                 (LEN (CDR X))
+                                 (UNARY-- (BINARY-+ '-1 N))))
+                               (BINARY-+
+                                (BINARY-*
+                                 '-1
+                                 (LEN
+                                  (NTHCDR (BINARY-+ N '-1) (CDR X))))
+                                '0))
+                              '0))))
+              NIL))

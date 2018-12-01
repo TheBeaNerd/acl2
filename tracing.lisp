@@ -31,10 +31,10 @@
    (poly-term-lst (access acl2::linear-pot pot :negatives))
    (poly-term-lst (access acl2::linear-pot pot :positives))))
 
-(defun poly-pot-list (pot-list)
+(defun poly-pot-lst (pot-list)
   (if (not (consp pot-list)) nil
     (append (poly-pot (car pot-list))
-            (poly-pot-list (cdr pot-list)))))
+            (poly-pot-lst (cdr pot-list)))))
 
 (defun show-poly-list (list)
   (declare (xargs :mode :program))
