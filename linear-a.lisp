@@ -3529,14 +3529,22 @@
   )
 
 ; dag
-(defrec pstat (sln zlist plist) t)
+(defrec zdb   (gvecs evecs) t)
+(defrec pstat (sln zlist plist zdb) t)
 
 (defun dag-self-dot-alist (alist1 dot)
   (if (not (consp alist1)) dot
     (dag-self-dot-alist (cdr alist1) (+ (* (cdar alist1) (cdar alist1)) dot))))
 
 (defun dag-self-dot (vector)
-  (dag-self-dot-alist (access poly vector :alist) 0))
+  (prog2$
+   (or (weak-poly-p vector) (break$))
+   (dag-self-dot-alist (access poly vector :alist) 0)))
+
+(defun weak-poly-listp (list)
+  (if (not (consp list)) t
+    (and (weak-poly-p (car list))
+         (weak-poly-listp (cdr list)))))
 
 (defun dag-dot-alist (alist1 alist2 dot)
   ;;  (declare (xargs :measure (+ (len alist1) (len alist2))))
@@ -3557,6 +3565,9 @@
   (if (not (consp alist)) nil
     (cons (cons (caar alist) (* coeff (cdar alist)))
           (dag-scale-alist (cdr alist) coeff))))
+
+(defun dag-scale-vector (v coeff)
+  (change poly v :alist (dag-scale-alist (access poly v :alist) coeff)))
 
 (defun dag-scale-and-add-alists (alist1 alist2 coeff)
   ;;(declare (xargs :measure (+ (len alist1) (len alist2))))
@@ -3583,147 +3594,358 @@
   (dag-scale-and-add-alists alist (access poly vector :alist) coeff))
 
 (defun dag-scale-and-add-vectors (v1 v2 coeff)
-  (let* ((alist1  (access poly v1 :alist))
-         (alist2  (access poly v2 :alist)))
-    (make poly
-          :constant 0
-          :alist (dag-scale-and-add-alists alist1 alist2 coeff)
-          :relation  (if (or (eq (access poly v1 :relation) '<)
-                             (eq (access poly v2 :relation) '<))
-                         '<
-                       '<=)
-          :ttree (cons-tag-trees (access poly v1 :ttree)
-                                 (access poly v2 :ttree))
-          :rational-poly-p (and (access poly v1 :rational-poly-p)
-                                (access poly v2 :rational-poly-p))
-          :parents (marry-parents (access poly v1 :parents)
-                                  (access poly v2 :parents))
-          :derived-from-not-equalityp nil)))
+  (if (= coeff 0) v1
+    (let* ((alist1  (access poly v1 :alist))
+           (alist2  (access poly v2 :alist)))
+      (make poly
+            :constant 0
+            :alist (dag-scale-and-add-alists alist1 alist2 coeff)
+            :relation  (if (or (eq (access poly v1 :relation) '<)
+                               (eq (access poly v2 :relation) '<))
+                           '<
+                         '<=)
+            :ttree (cons-tag-trees (access poly v1 :ttree)
+                                   (access poly v2 :ttree))
+            :rational-poly-p (and (access poly v1 :rational-poly-p)
+                                  (access poly v2 :rational-poly-p))
+            :parents (marry-parents (access poly v1 :parents)
+                                    (access poly v2 :parents))
+            :derived-from-not-equalityp nil))))
 
-(defun dag-score-poly (poly pstat)
-  (dag-dot-alist (access poly poly :alist) (access pstat pstat :sln) (access poly poly :constant)))
+(defun dag-score-poly (poly sln)
+  (dag-dot-alist (access poly poly :alist) sln (access poly poly :constant)))
 
-(defun dag-score-list1 (kind list ref plist zlist nlist)
+(defun dag-score-list (kind list ref plist zlist nlist)
   (if (not (consp list)) (mv plist zlist nlist)
     (let ((poly (car list)))
       (let ((score (dag-dot-alist (access poly poly :alist) ref (if (eq kind :polys) (access poly poly :constant) 0))))
         (cond
-         ((< 0 score) (dag-score-list1 kind (cdr list) ref (cons poly plist) zlist nlist))
-         ((= 0 score) (dag-score-list1 kind (cdr list) ref plist (cons poly zlist) nlist))
-         (t           (dag-score-list1 kind (cdr list) ref plist zlist (cons poly nlist))))))))
-
-(defun dag-score-list (kind list ref plist zlist nlist)
-  (dag-score-list1 kind list ref plist zlist nlist))
+         ((< 0 score) (dag-score-list kind (cdr list) ref (cons poly plist) zlist nlist))
+         ((= 0 score) (dag-score-list kind (cdr list) ref plist (cons poly zlist) nlist))
+         (t           (dag-score-list kind (cdr list) ref plist zlist (cons poly nlist))))))))
 
 (defun dag-poly-to-vector (poly)
   (change poly poly :constant 0))
 
-(defun dag-remove-zvectors-from-vector (zvectors vector)
-  (if (not (consp zvectors)) vector
-    (let ((zref (car zvectors)))
-      (let ((dot (dag-dot-vectors zref vector)))
-        (if (= 0 dot) (dag-remove-zvectors-from-vector (cdr zvectors) vector)
-          (let ((coeff (/ (- dot) (dag-self-dot zref))))
-            ;; zref * (vector + coeff*zref) = 0
-            ;; zref*vector + coeff*zref^2 = 0
-            ;; coeff= (- (vector*zref))/(zref^2)
-            ;; coeff = (- dot)/1.0
-            (let ((vector (dag-scale-and-add-vectors vector zref coeff)))
-              (dag-remove-zvectors-from-vector (cdr zvectors) vector))))))))
-
 (defun dag-zero-vectorp (vector)
   (= (len (access poly vector :alist)) 0))
 
+;; vector
+;; residual (initially = vector)
+;; - filter polys, keep only those that actually oppose vector.
+;;   - remove opposing polys from residual
+;;   - if residual*vector <= 0, backtrack
+;; - when done, residual must be non-negative w/to others.
+;; 
+;; d = r - v
+;; a = x*d
+;; y = x - (a/d^2)d
+;; b = y*r
+;; w = r - (b/y^2)y
+;; ---
+;; x = (a/d^2)d + y
+;; v = d + r
+;;   = d + (b/y^2)y + w
+;;
+;; r = (b/y^2)(x - (a/d^2)d) + w
+;;   = 
+
+(defun dag-remove-negative-base-from-vector (vector base bb)
+  (let ((dot (dag-dot-vectors vector base)))
+    (cond
+     ((<= 0 dot) vector)
+     (t
+      ;; base * (vector + coeff*base) = 0
+      ;; base * vector + coeff * base^2 = 0
+      ;; coeff = (- base * vector) / base^2
+      ;; coeff = (- dot)/base^2
+      (let ((coeff (/ (- dot) bb)))
+        (dag-scale-and-add-vectors vector base coeff))))))
+
+(defun dag-remove-negative-base-list-from-vector (vector blist)
+  (if (not (consp blist)) vector
+    (let ((base (car blist)))
+      (let ((bb (dag-self-dot base)))
+        (let ((vector (dag-remove-negative-base-from-vector vector base bb)))
+          (dag-remove-negative-base-list-from-vector vector (cdr blist)))))))
+
+;;
+;;
+;;
+
+(defun dag-remove-base-from-vector (vector base bb)
+  (let ((dot (dag-dot-vectors vector base)))
+    (if (= 0 dot) (mv 0 vector)
+      ;; base * (vector + coeff*base) = 0
+      ;; base * vector + coeff * base^2 = 0
+      ;; coeff = (- base * vector) / base^2
+      ;; coeff = (- dot)/base^2
+      (let ((coeff (/ (- dot) bb)))
+        (mv (signum dot) (dag-scale-and-add-vectors vector base coeff))))))
+
+(defun dag-construct-residuals (constraint cc vlist zeros palist zlist nalist)
+  (if (not (consp vlist)) (mv zeros palist zlist nalist)
+    ;; constraint(base + coeff*constraint) >= 0
+    (mv-let (sign residual) (dag-remove-base-from-vector (car vlist) constraint cc)
+      (cond
+       ((= sign 0)
+        (dag-construct-residuals constraint cc (cdr vlist) zeros palist (cons (car vlist) zlist) nalist))
+       ((< 0 sign)
+        (let ((palist (cons (cons residual (car vlist)) palist)))
+          (dag-construct-residuals constraint cc (cdr vlist) zeros palist zlist nalist)))
+       ((dag-zero-vectorp residual)
+        (dag-construct-residuals constraint cc (cdr vlist) (cons (car vlist) zeros) palist zlist nalist))
+       (t
+        (let ((nalist (cons (cons residual (car vlist)) nalist)))
+          (dag-construct-residuals constraint cc (cdr vlist) zeros palist zlist nalist)))))))
+
+(defun dag-remove-base-list-from-vector (vector blist changed)
+  (if (not (consp blist)) (mv changed vector)
+    (let* ((base (car blist))
+           (bb   (dag-self-dot base)))
+      (mv-let (sign vector) (dag-remove-base-from-vector vector base bb)
+        (dag-remove-base-list-from-vector vector (cdr blist) (or (not (= sign 0)) changed))))))
+
+(defun dag-remove-base-from-vector-list (vlist base bb)
+  (if (not (consp vlist)) nil
+    (mv-let (sign vector) (dag-remove-base-from-vector (car vlist) base bb)
+      (declare (ignore sign))
+      (cond
+       ((dag-zero-vectorp vector)
+        (dag-remove-base-from-vector-list (cdr vlist) base bb))
+       (t
+        (cons vector (dag-remove-base-from-vector-list (cdr vlist) base bb)))))))
+
+(defun dag-mutually-remove-base-list (blist res)
+  (if (not (consp blist)) res
+    (let* ((base (car blist))
+           (bb   (dag-self-dot base)))
+      (let ((res (dag-remove-base-from-vector-list res base bb)))
+        (let ((res (cons base res)))
+          (dag-mutually-remove-base-list (cdr blist) res))))))
+
+(defun dag-remove-base-from-vector-list-split (vlist base bb same delta)
+  (if (not (consp vlist)) (mv same delta)
+    ;; So this should be a projection onto base.
+    (mv-let (sign vector) (dag-remove-base-from-vector (car vlist) base bb)
+      (cond
+       ((= sign 0)
+        (dag-remove-base-from-vector-list-split (cdr vlist) base bb (cons vector same) delta))
+       ((dag-zero-vectorp vector)
+        (dag-remove-base-from-vector-list-split (cdr vlist) base bb same delta))
+       (t
+        (dag-remove-base-from-vector-list-split (cdr vlist) base bb same (cons vector delta)))))))
+
+(defun dag-remove-base-list-from-split-vector-list (same delta blist)
+  (if (not (consp blist)) (mv same delta)
+    (let* ((base (car blist))
+           (bb   (dag-self-dot base)))
+      (let ((delta (dag-remove-base-from-vector-list delta base bb)))
+        (mv-let (same delta) (dag-remove-base-from-vector-list-split same base bb nil delta)
+          (dag-remove-base-list-from-split-vector-list same delta (cdr blist)))))))
+
+(defun dag-extract-triangle-equalities1 (ref aalist balist evecs)
+  (if (not (consp aalist)) (mv balist evecs)
+    (let ((pair (car aalist)))
+      (let ((residual (car pair)))
+        ;; I think this is safe.  It is certainly OK for positive
+        ;; vectors.  I *think* it is OK for negative ones .. but
+        ;; I'm not sure.
+        (if (<= (dag-dot-vectors ref residual) 0)
+            (dag-extract-triangle-equalities1 ref (cdr aalist) balist (cons (cdr pair) evecs))
+          (dag-extract-triangle-equalities1 ref (cdr aalist) (cons pair balist) evecs))))))
+
+(defun dag-extract-triangle-equalities2 (nalist palist evecs)
+  (if (not (consp nalist)) evecs
+    (let ((pair (car nalist)))
+      (let ((residual (car pair))
+            (vector   (cdr pair)))
+        (mv-let (nalist new-evecs) (dag-extract-triangle-equalities1 residual (cdr nalist) nil nil)
+          (mv-let (palist new-evecs) (dag-extract-triangle-equalities1 residual palist nil new-evecs)
+            (let ((new-evecs (if (consp new-evecs) (cons vector new-evecs) nil)))
+              (let ((evecs (revappend new-evecs evecs)))
+                (dag-extract-triangle-equalities2 nalist palist evecs)))))))))
+
+(defun dag-extract-and-apply-equalities (constraint gvecs deltas evecs)
+  (mv-let (zeros palist zlist nalist) (dag-construct-residuals constraint (dag-self-dot constraint) gvecs nil nil nil nil)
+    (cond
+     ((consp zeros)
+      (let ((deltas (revappend (strip-cars palist) (revappend (strip-cars nalist) deltas)))
+            (gvecs  (revappend zlist deltas)))
+        (prog2$
+         (or (weak-poly-listp gvecs) (break$))
+         (mv-let (sign constraint) (dag-remove-base-from-vector constraint (car zeros) (dag-self-dot (car zeros)))
+           (declare (ignore sign))
+           (mv t constraint gvecs deltas (list (car zeros)))))))
+     (t
+      (let ((palist (revappend (pairlis$ zlist zlist) palist)))
+        (let ((new-evecs (dag-extract-triangle-equalities2 nalist palist nil)))
+          (let ((new-evecs (dag-mutually-remove-base-list new-evecs nil)))
+            (mv-let (gvecs deltas) (dag-remove-base-list-from-split-vector-list gvecs deltas new-evecs)
+              (mv-let (changed constraint) (dag-remove-base-list-from-vector constraint new-evecs nil)
+                (prog2$
+                 (or (weak-poly-listp gvecs) (break$))
+                 (mv changed constraint gvecs deltas (revappend new-evecs evecs))))))))))))
+
+;; Everytime you find a new rewrite you need to extract the
+;; impacted elements from zlist and start over.
+
+(defun dag-insert-deltas-loop (vector deltas gvecs evecs)
+  (declare (ignore vector deltas gvecs evecs))
+  nil)
+
+(defun dag-insert-deltas (vector deltas gvecs evecs)
+  (prog2$
+   (dag-insert-deltas-loop vector deltas gvecs evecs)
+   (mv-let (changed vector gvecs deltas evecs) (dag-extract-and-apply-equalities vector gvecs deltas evecs)
+     (cond
+      ((dag-zero-vectorp vector)
+       (if (not (consp deltas)) (mv gvecs evecs)
+         (dag-insert-deltas (car deltas) (cdr deltas) gvecs evecs)))
+      ((not changed)
+       (if (not (consp deltas)) (mv (cons vector gvecs) evecs)
+         (dag-insert-deltas (car deltas) (cdr deltas) (cons vector gvecs) evecs)))
+      (t
+       (dag-insert-deltas vector deltas gvecs evecs))))))
+  
+(defun dag-insert-zero-vector-zdb (vector zdb)
+  (let ((evecs (access zdb zdb :evecs))
+        (gvecs (access zdb zdb :gvecs)))
+    (mv-let (changed vector) (dag-remove-base-list-from-vector vector evecs nil)
+      (declare (ignore changed))
+      (if (dag-zero-vectorp vector) zdb
+        (mv-let (gvecs evecs) (dag-insert-deltas vector nil gvecs evecs)
+          (make zdb :gvecs gvecs :evecs evecs))))))
+
+(defun dag-consider-vector (vector gvecs evecs)
+  (prog2$
+   (or (and (weak-poly-listp gvecs) (weak-poly-listp evecs)) (break$))
+   (mv-let (changed vector) (dag-remove-base-list-from-vector vector evecs nil)
+     (declare (ignore changed))
+     (if (dag-zero-vectorp vector) (mv vector gvecs evecs)
+       (mv-let (changed vector gvecs deltas evecs) (dag-extract-and-apply-equalities vector gvecs nil evecs)
+         (cond
+          ((or (dag-zero-vectorp vector) (and (not changed) (not (consp deltas))))
+           (mv vector gvecs evecs))
+          (t
+           (mv-let (gvecs evecs)
+             (if (not (consp deltas)) (mv gvecs evecs)
+               (dag-insert-deltas (car deltas) (cdr deltas) gvecs evecs))
+             (dag-consider-vector vector gvecs evecs)))))))))
+
+;;
+;; zdb interfaces
+;;
+
+(defun dag-realize-vector-zdb (vector zdb)
+  (let ((evecs (access zdb zdb :evecs))
+        (gvecs (access zdb zdb :gvecs)))
+    (mv-let (vector gvecs evecs) (dag-consider-vector vector gvecs evecs)
+      (prog2$
+       (assert$ (weak-poly-p vector) nil)
+       (let ((zdb (make zdb :gvecs gvecs :evecs evecs)))
+         (prog2$
+          (or (weak-poly-listp gvecs) (break$))
+          (let ((vector (dag-remove-negative-base-list-from-vector vector gvecs)))
+            (mv vector zdb))))))))
+
+(defun dag-remove-vector-zdb (vector zdb)
+  (let ((evecs (access zdb zdb :evecs))
+        (gvecs (access zdb zdb :gvecs)))
+    (mv-let (changed vector) (dag-remove-base-list-from-vector vector evecs nil)
+      (let ((err changed))
+        (mv-let (pvecs zvecs nvecs) (dag-score-list :vectors gvecs (access poly vector :alist) nil nil nil)
+          (declare (ignore pvecs))
+          (let ((err (or err (consp nvecs))))
+            (mv (change zdb zdb :gvecs zvecs) err)))))))
+
+(defun dag-unsat-strict-polys-zdb (list zdb)
+  (if (not (consp list)) nil
+    (let ((vector (dag-poly-to-vector (car list))))
+      (mv-let (changed vector) (dag-remove-base-list-from-vector vector (access zdb zdb :evecs) nil)
+        (declare (ignore changed))
+        (if (dag-zero-vectorp vector) vector
+          (dag-unsat-strict-polys-zdb (cdr list) zdb))))))
+
+;; zvecs invariants:
+;; - no annihilating pairs
+;; - no triangles
+;; - orthogonal to evecs
+
+;; (defun dag-select-opposing-vector (vector list rst)
+;;   (if (not (consp list)) (mv nil nil rst)
+;;     (let ((v2 (car list)))
+;;       (if (< (dag-dot-vectors vector v2) 0) (mv t v2 rst)
+;;         (dag-selct-opposing-vector vector (cdr list) (cons v2 rst))))))
+
+;; (defun dag-min-coeff-to-zero1 (xlist residual sln mincoeff zlist nlist)
+;;   (if (not (consp xlist)) (mv (dag-scale-and-add-alists sln (access poly residual :alist) mincoeff) zlist nlist)
+;;     (let ((zref (car xlist)))
+;;       (let ((score (dag-score-poly zref sln))
+;;             (den   (dag-dot-vectors zref residual)))
+;;         (let ((coeff (if (= den 0) den (/ (- score) den))))
+;;           (cond
+;;            ((<= coeff 0)       (dag-min-coeff-to-zero1 (cdr xlist) residual sln mincoeff zlist (cons zref nlist)))
+;;            ((= coeff mincoeff) (dag-min-coeff-to-zero1 (cdr xlist) residual sln mincoeff (cons zref zlist) nlist))
+;;            ((< coeff mincoeff) (dag-min-coeff-to-zero1 (cdr xlist) residual sln mincoeff (list zref) (revappend zlist nlist)))
+;;            (t                  (dag-min-coeff-to-zero1 (cdr xlist) residual sln mincoeff zlist (cons zref nlist)))))))))
+
+;; (defun dag-min-coeff-to-zero (poly score residual sln xlist)
+;;   (let ((coeff (/ (- score) (dag-dot-vectors poly residual))))
+;;     (dag-min-coeff-to-zero1 xlist residual sln coeff (list poly) nil)))
+    
 (defun dag-insert-positive-poly (score poly pstat)
   (declare (ignore score))
   (change pstat pstat :plist (cons poly (access pstat pstat :plist))))
 
-(defun dag-insert-positive-poly-list (list pstat)
-  (change pstat pstat :plist (revappend list (access pstat pstat :plist))))
-
 (defun dag-insert-zero-poly (poly pstat)
-  (change pstat pstat :zlist (cons poly (access pstat pstat :zlist))))
-
-(defun dag-insert-zero-poly-list (list pstat)
-  (change pstat pstat :zlist (revappend list (access pstat pstat :zlist))))
-
-(defun dag-reconsider-negatives (vector list nlist plist)
-  (if (not (consp list)) (mv nlist plist)
-    (let ((dot (dag-dot-vectors vector (car list))))
-      (if (<= 0 dot) (dag-reconsider-negatives vector (cdr list) nlist (cons (car list) plist))
-        (dag-reconsider-negatives vector (cdr list) (cons (car list) nlist) plist)))))
-
-;; remove opposing polys
-;;
-;; The issue is that the zero list may contain negative inner products.
-;; 
-(defun dag-remove-opposing-polys-from-vector (vector xlist zbasis zlist nnlist)
-  (if (not (consp xlist)) (mv nil vector zbasis zlist nnlist)
-    (let ((xref (car xlist)))
-      (let ((xvec (dag-poly-to-vector xref)))
-        (let ((xvec (dag-remove-zvectors-from-vector zbasis xvec)))
-          (if (dag-zero-vectorp xvec)
-              (dag-remove-opposing-polys-from-vector vector (cdr xlist) zbasis (cons xref zlist) nnlist)
-            (let ((dot (dag-dot-vectors vector xvec)))
-              (if (<= 0 dot) (dag-remove-opposing-polys-from-vector vector (cdr xlist) zbasis zlist (cons xref nnlist))
-                (let ((zbasis (cons xvec zbasis))
-                      (zlist  (cons xref zlist)))
-                  ;; We need to re-consider elements of nnlist that might
-                  ;; oppose the updated vector.  Given that they
-                  ;; previously didn't oppose it, the only way they can
-                  ;; now is to oppose the new vector component.
-                  (mv-let (pnlist znlist xlist) (dag-score-list :vectors nnlist (access poly xvec :alist) nil nil (cdr xlist))
-                    (let ((nnlist (revappend znlist pnlist)))
-                      ;; xvec * (vector + coeff*xvec) = 0
-                      ;; xvec * vector + coeff * xvec^2 = 0
-                      ;; coeff = (- xvec * vector) / xvec^2
-                      ;; coeff = (- dot)/xvec^2
-                      (let ((coeff (/ (- dot) (dag-self-dot xvec))))
-                        (let ((vector (dag-scale-and-add-vectors vector xvec coeff)))
-                          (if (dag-zero-vectorp vector)  (mv vector vector zbasis zlist nnlist)
-                            (dag-remove-opposing-polys-from-vector vector xlist zbasis zlist nnlist)))))))))))))))
-
-(defun dag-remove-opposing-polys-from-vector-list (list xlist)
-  (if (not (consp list)) nil
-    (let ((vector (car list)))
-      ;; The resulting vector is + or zero w/to all of the polys in xlist
-      (mv-let (unsat vector zbasis zlist nnlist) (dag-remove-opposing-polys-from-vector vector xlist nil nil nil)
-        (declare (ignore vector zbasis zlist nnlist))
-        (or unsat
-            (dag-remove-opposing-polys-from-vector-list (cdr list) xlist))))))
+  (let ((zlist (access pstat pstat :zlist))
+        (zdb   (access pstat pstat :zdb)))
+    (let ((vector (dag-poly-to-vector poly)))
+      (let ((zdb (dag-insert-zero-vector-zdb vector zdb)))
+        (change pstat pstat
+                :zlist (cons poly zlist)
+                :zdb   zdb)))))
 
 (defun dag-insert-negative-poly (score poly pstat)
-  (let ((zlist (access pstat pstat :zlist))
+  (let ((sln   (access pstat pstat :sln))
         (plist (access pstat pstat :plist))
-        (sln   (access pstat pstat :sln)))
+        (zlist (access pstat pstat :zlist))
+        (zdb   (access pstat pstat :zdb))
+        )
     (let ((vector (dag-poly-to-vector poly)))
-      (mv-let (unsat vector zbasis new-zlist nnlist) (dag-remove-opposing-polys-from-vector vector zlist nil nil nil)
-        (declare (ignore zbasis))
-        (if unsat (mv unsat nil pstat)
-          ;; (poly * (sln + coeff*vector)) = poly*sln + coeff*poly*vector = 0 
-          ;; coeff = (- poly*sln)/(poly*vector) 
-          ;;       = (- score)/vector^2
-          (let ((coeff (/ (- score) (dag-self-dot vector))))
-            (let ((sln (dag-scale-and-add-vector-to-sln sln vector coeff)))
-              (mv-let (plist zlist nlist) (dag-score-list :polys (revappend nnlist plist) sln nil new-zlist nil)
-              (let ((pstat (make pstat
-                                 :sln   sln
-                                 :zlist (cons poly zlist)
-                                 :plist plist)))
-                (mv nil nlist pstat))))))))))
-
+      (mv-let (residual zdb) (dag-realize-vector-zdb vector zdb)
+        (if (dag-zero-vectorp residual) (mv residual nil pstat nil)
+          (mv-let (zdb err) (dag-remove-vector-zdb residual zdb)
+            ;; vector*(sln + ceoff*residual) = 0
+            ;; vector*sln+ coeff*residual*vector = 0
+            ;; coeff = (- vector*sln)/(residual*vector)
+            ;; coeff = (- score)/(residual*vector)
+            (let ((coeff (/ (- score) (dag-dot-vectors vector residual))))
+              (let ((sln (dag-scale-and-add-alists sln (access poly residual :alist) coeff)))
+                (mv-let (new-plist new-zlist nlist) (dag-score-list :vectors zlist (access poly residual :alist) nil nil nil)
+                  (let ((err (or err (consp nlist))))
+                    (mv-let (plist zlist nlist) (dag-score-list :polys plist sln new-plist new-zlist nil)
+                      (let ((pstat (make pstat
+                                         :sln   sln
+                                         :plist plist
+                                         :zlist (cons poly zlist)
+                                         :zdb   (dag-insert-zero-vector-zdb residual zdb)
+                                         )))
+                        (mv nil nlist pstat err)))))))))))))
+  
 (defun dag-add-poly (poly pstat)
-  (let ((score (dag-score-poly poly pstat)))
-    (if (< 0 score) (mv nil nil (dag-insert-positive-poly score poly pstat))
-      (if (= 0 score) (mv nil nil (dag-insert-zero-poly poly pstat))
+  (let ((score (dag-score-poly poly (access pstat pstat :sln))))
+    (if (< 0 score) (mv nil nil (dag-insert-positive-poly score poly pstat) nil)
+      (if (= 0 score) (mv nil nil (dag-insert-zero-poly poly pstat) nil)
         (dag-insert-negative-poly score poly pstat)))))
 
-(defun dag-collect-strict-vectors (vectors)
-  (if (not (consp vectors)) nil
-    (let ((vector (car vectors)))
-      (if (eq (access poly vector :relation) '<)
-          (cons vector (dag-collect-strict-vectors (cdr vectors)))
-        (dag-collect-strict-vectors (cdr vectors))))))
+(defun dag-collect-strict-polys (plist)
+  (if (not (consp plist)) nil
+    (let ((poly (car plist)))
+      (if (eq (access poly poly :relation) '<)
+          (cons poly (dag-collect-strict-polys (cdr plist)))
+        (dag-collect-strict-polys (cdr plist))))))
 
 (defun dag-epsilon-unsat (pstat)
   ;;
@@ -3741,15 +3963,20 @@
   ;; - Reduce them by the zvector set
   ;; - If both are unsat, no epsilon coefficient exits.
   ;;
-  (let ((zlist (access pstat pstat :zlist)))
-    (let ((nlist (dag-collect-strict-vectors zlist)))
-      (dag-remove-opposing-polys-from-vector-list nlist zlist))))
+  (let ((zlist (access pstat pstat :zlist))
+        (zdb   (access pstat pstat :zdb)))
+    (let ((nlist (dag-collect-strict-polys zlist)))
+      (mv (dag-unsat-strict-polys-zdb nlist zdb) nil))))
+
+(defun dag-new-zdb ()
+  (make zdb :gvecs nil :evecs nil))
 
 (defun dag-new-pstat ()
   (make pstat
         :sln nil
         :zlist nil
-        :plist nil))
+        :plist nil
+        :zdb  (dag-new-zdb)))
 
 (defun dag-check-pstat (pstat)
   (let ((zlist (access pstat pstat :zlist))
@@ -3764,8 +3991,8 @@
 
 (defun dag-add-poly-list (polys pstat bad)
   (if (not (consp polys)) (mv nil pstat bad)
-    (mv-let (unsat new-polys pstat) (dag-add-poly (car polys) pstat)
-      (let ((bad (or bad (not (dag-check-pstat pstat)))))
+    (mv-let (unsat new-polys pstat err1) (dag-add-poly (car polys) pstat)
+      (let ((bad (or bad err1 (not (dag-check-pstat pstat)))))
         (if (not unsat) (dag-add-poly-list (revappend new-polys (cdr polys)) pstat bad)
           (mv unsat pstat bad))))))
 
@@ -3781,14 +4008,17 @@
 
 (defun dag-add-polys1 (lst pot-lst)
   (mv-let (unsat pstat bad) (dag-add-linear-pot pot-lst (dag-new-pstat) nil)
-          (let ((zed (and bad (dag-log-form (list "bad boy" `(dag-add-polys1 ',lst ',pot-lst))))))
-            (declare (ignore zed))
-            (or unsat
-                (mv-let (unsat pstat bad) (dag-add-poly-list lst pstat nil)
-                        (let ((zed (and bad (dag-log-form (list "bad boy" `(dag-add-polys1 ',lst ',pot-lst))))))
-                          (declare (ignore zed))
-                          (or unsat
-                              (dag-epsilon-unsat pstat))))))))
+    (let ((zed (and bad (dag-log-form (list "error" `(dag-add-polys1 ',lst ',pot-lst))))))
+      (declare (ignore zed))
+      (or unsat
+          (mv-let (unsat pstat bad) (dag-add-poly-list lst pstat nil)
+            (let ((zed (and bad (dag-log-form (list "error" `(dag-add-polys1 ',lst ',pot-lst))))))
+              (declare (ignore zed))
+              (or unsat
+                  (mv-let (unsat err) (dag-epsilon-unsat pstat)
+                    (let ((zed (and err (dag-log-form (list "error" `(dag-add-polys1 ',lst ',pot-lst))))))
+                      (declare (ignore zed))
+                      unsat)))))))))
 
 (defun dag-poisoned-pot (pot-lst)
   (and (consp pot-lst)
