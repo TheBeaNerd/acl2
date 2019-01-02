@@ -254,11 +254,20 @@ endif # ifdef ABC_EXISTS
 
 
 $(info Determining whether Z3 is installed, for use by SMTLink)
-SMTLINK_EXISTS := $(shell z3 --version 2>/dev/null)
+# Z3_CHECK is normally assigned the shell exit code returned by a
+# script that looks for the z3 python library.  The script may fail
+# and return a non-zero exit code for a variety of reasons, but it
+# should return zero if 'python' can find the 'z3' library.  We also
+# allow the user to force SMTLINK by setting SMTLINK_EXISTS=1
 ifdef SMTLINK_EXISTS
+Z3_CHECK := 0
+else
+Z3_CHECK := $(shell /usr/bin/env python -c "import sys, pkgutil; sys.exit(0 if pkgutil.find_loader('z3') else 1)" > /dev/null 2>&1; echo $$?)
+endif # ifdef SMTLINK_EXISTS
+ifeq ($(Z3_CHECK),0)
   export OS_HAS_SMTLINK ?= 1
   EXPORTED_VARS += OS_HAS_SMTLINK
-endif # ifdef SMTLINK_EXISTS
+endif # ifeq ($(Z3_CHECK),0)
 
 # The default for USE_QUICKLISP is now 1 for all ACL2 host Lisps
 # except for GCL, which we believe does not support quicklisp.
