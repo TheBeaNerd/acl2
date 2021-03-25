@@ -179,7 +179,7 @@ default-value-of-correct-shape)').</p>")
       (cond
        ((symbolp lhs)
         (cond
-         ((or (eq lhs t) (eq lhs nil))
+         ((or (eq lhs t) (eq lhs nil) (equal (symbol-package-name lhs) "KEYWORD"))
           (pbl-tests-bindings (cons `(eq ,rhs ,lhs) tests) bindings))
          ((and (> (length (symbol-name lhs)) 0)
                (eql #\* (char (symbol-name lhs) 0)))
