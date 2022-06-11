@@ -4545,7 +4545,7 @@
                 :rdepth (access metafunction-context mfc :rdepth)
                 :step-limit (initial-step-limit wrld state)
                 :type-alist (access metafunction-context mfc :type-alist)
-                :obj nil    ; ignored
+                :obj '?     ; ignored
                 :geneqv nil ; ignored
                 :pequiv-info nil ; ignored
                 :wrld wrld

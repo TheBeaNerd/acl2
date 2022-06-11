@@ -25204,6 +25204,7 @@
           (relieve-hyp-synp rune hyp unify-subst
                             (rewrite-stack-limit wrld)
                             type-alist
+                            '?
                             wrld
                             state
                             nil ; fnstack

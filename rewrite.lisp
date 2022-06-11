@@ -11019,7 +11019,7 @@
                     (quote-normal-form (strip-cdrs alist)))
           unify-subst))
 
-(defun relieve-hyp-synp (rune hyp0 unify-subst rdepth type-alist wrld state
+(defun relieve-hyp-synp (rune hyp0 unify-subst rdepth type-alist obj wrld state
                               fnstack ancestors backchain-limit
                               simplify-clause-pot-lst rcnst gstack ttree bkptr)
 
@@ -11039,7 +11039,7 @@
 ; The user-supplied term for synp may use the mfc in arbitrary ways, so we
 ; don't have a clear :obj and we cannot do better than equality for :geneqv.
 
-                        :obj '?
+                        :obj obj
                         :geneqv nil
                         :wrld wrld
                         :fnstack fnstack
@@ -14401,7 +14401,7 @@
 ; Note that unlike some other functions in the rewrite clique, here we really
 ; do care that bkptr is a number representing the hypothesis.
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
 
@@ -14416,7 +14416,7 @@
    (signed-byte 30)
    (cond ((ffn-symb-p hyp0 'synp)
           (mv-let (wonp failure-reason unify-subst ttree)
-                  (relieve-hyp-synp rune hyp0 unify-subst rdepth type-alist wrld
+                  (relieve-hyp-synp rune hyp0 unify-subst rdepth type-alist obj wrld
                                     state fnstack ancestors backchain-limit
                                     simplify-clause-pot-lst rcnst gstack ttree
                                     bkptr)
@@ -14732,7 +14732,7 @@
 ; user.  If there are user complaints about that, we can consider a more
 ; elaborate form of failure reporting.
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
   (the-mv
@@ -14765,7 +14765,7 @@
                           (1+ bkptr) unify-subst0 ttree0 allp
                           (cdr cached-failure-reason-free)
                           nil)
-           :obj nil :geneqv nil :pequiv-info nil ; all ignored
+           :obj obj :geneqv nil :pequiv-info nil ; all ignored
            )))
         (let ((rw-cache-alist-new
                (extend-rw-cache-alist-free rcnst
@@ -14803,7 +14803,7 @@
                   unify-subst bkptr
                   unify-subst0 ttree0 allp
                   rw-cache-alist rw-cache-alist-new)
-                 :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                 :obj obj :geneqv nil :pequiv-info nil ; all ignored
                  :ttree (accumulate-rw-cache t ttree1 ttree0)))))))))))))
 
 (defun relieve-hyps1 (rune target hyps backchain-limit-lst
@@ -14834,7 +14834,7 @@
 ; extending rw-cache-alist-new.  Note that rw-cache-alist-new contains only new
 ; entries, rather than extending rw-cache-alist.
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
 
@@ -14869,7 +14869,7 @@
                       (new-backchain-limit (car backchain-limit-lst)
                                            backchain-limit
                                            ancestors)
-                      :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                      :obj obj :geneqv nil :pequiv-info nil ; all ignored
                       )
        bkptr)
       (cond
@@ -14881,7 +14881,7 @@
                                       unify-subst0 ttree0
                                       allp
                                       rw-cache-alist rw-cache-alist-new)
-                       :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                       :obj obj :geneqv nil :pequiv-info nil ; all ignored
                        :ttree new-ttree))
        ((eq relieve-hyp-ans :unify-subst-list)
 
@@ -14900,7 +14900,7 @@
                                 (activate-memo allp)
                                 rw-cache-alist
                                 rw-cache-alist-new)
-                               :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                               :obj obj :geneqv nil :pequiv-info nil ; all ignored
                                )
                 (mv step-limit relieve-hyps-ans
                     (and (null relieve-hyps-ans)
@@ -14965,7 +14965,7 @@
                                          (activate-memo allp)
                                          rw-cache-alist
                                          rw-cache-alist-new)
-                   :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                   :obj obj :geneqv nil :pequiv-info nil ; all ignored
                    )
                   (mv step-limit relieve-hyps-ans
                       (and (null relieve-hyps-ans)
@@ -15016,7 +15016,7 @@
 ; the unify-subst failed to succeed, except if this list is empty, then a
 ; 'hyp-vars token is used in its place (see relieve-hyps1).
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
   (the-mv
@@ -15047,7 +15047,7 @@
                                         unify-subst0 ttree0 allp
                                         (cdr cached-failure-reason-free)
                                         nil)
-                         :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                         :obj obj :geneqv nil :pequiv-info nil ; all ignored
                          :ttree new-ttree)))
         (let ((rw-cache-alist-new
                (extend-rw-cache-alist-free rcnst
@@ -15086,7 +15086,7 @@
                                        bkptr
                                        unify-subst0 ttree0 allp
                                        rw-cache-alist rw-cache-alist-new)
-                 :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                 :obj obj :geneqv nil :pequiv-info nil ; all ignored
                  :ttree (accumulate-rw-cache t ttree1 ttree)))))))))))
      (t ; failed to relieve hyp using rest-type-alist
       (rewrite-entry
@@ -15102,7 +15102,7 @@
                              bkptr
                              unify-subst0 ttree0 allp
                              rw-cache-alist rw-cache-alist-new)
-       :obj nil :geneqv nil :pequiv-info nil ; all ignored
+       :obj obj :geneqv nil :pequiv-info nil ; all ignored
        ))))))
 
 (defun relieve-hyps1-free-2
@@ -15122,7 +15122,7 @@
 ; failure-reason), a unify-subst extending the given unify-subst, a ttree, and
 ; a resulting allp.
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
 
@@ -15185,7 +15185,7 @@
                                 unify-subst0 ttree0 allp
                                 (cdr cached-failure-reason-free)
                                 nil)
-                 :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                 :obj obj :geneqv nil :pequiv-info nil ; all ignored
                  )
                 (let ((rw-cache-alist-new
                        (extend-rw-cache-alist-free
@@ -15244,7 +15244,7 @@
                                             unify-subst0 ttree0 allp
                                             (cdr cached-failure-reason-free)
                                             nil)
-                             :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                             :obj obj :geneqv nil :pequiv-info nil ; all ignored
                              :ttree new-ttree)))
             (let ((rw-cache-alist-new
                    (extend-rw-cache-alist-free rcnst
@@ -15279,14 +15279,14 @@
                       hyp rest-lemmas forcer-fn forcep ens force-flg rune
                       target hyps backchain-limit-lst unify-subst bkptr
                       unify-subst0 ttree0 allp rw-cache-alist rw-cache-alist-new)
-                     :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                     :obj obj :geneqv nil :pequiv-info nil ; all ignored
                      :ttree (accumulate-rw-cache t ttree1 ttree)))))))))))
         (t (rewrite-entry
             (relieve-hyps1-free-2
              hyp nil forcer-fn forcep ens force-flg rune
              target hyps backchain-limit-lst unify-subst bkptr
              unify-subst0 ttree0 allp rw-cache-alist rw-cache-alist-new)
-            :obj nil :geneqv nil :pequiv-info nil ; all ignored
+            :obj obj :geneqv nil :pequiv-info nil ; all ignored
             ))))))))
 
 (defun relieve-hyps (rune target hyps backchain-limit-lst
@@ -15305,7 +15305,7 @@
 ; 'rw-cache-any-tag and 'rw-cache-nil-tag may differ between the input and
 ; output ttrees.
 
-  (declare (ignore obj geneqv pequiv-info)
+  (declare (ignore geneqv pequiv-info)
            (type (unsigned-byte 29) rdepth)
            (type (signed-byte 30) step-limit))
 
@@ -15369,7 +15369,7 @@
                       (relieve-hyps1 rune target hyps backchain-limit-lst
                                      unify-subst 1 unify-subst ttree allp
                                      old-rw-cache-alist nil)
-                      :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                      :obj obj :geneqv nil :pequiv-info nil ; all ignored
 
 ; If we are doing non-linear arithmetic, we will be rewriting linear
 ; terms under a different theory than the standard one.  However, when
@@ -15852,7 +15852,7 @@
                                               (pairlis$ vars vars))
                                          nil ; allp=nil for meta rules
                                          )
-                                        :obj nil         ; ignored
+                                        :obj obj         ; ignored
                                         :geneqv nil      ; ignored
                                         :pequiv-info nil ; ignored
                                         )
@@ -15989,7 +15989,7 @@
                                           (access rewrite-rule
                                                   lemma
                                                   :nume))))
-                             :obj nil         ; ignored
+                             :obj obj         ; ignored
                              :geneqv nil      ; ignored
                              :pequiv-info nil ; ignored
                              )
@@ -16261,7 +16261,7 @@
                                         unify-subst
                                         nil ; allp=nil for definitions
                                         )
-                          :obj nil :geneqv nil :pequiv-info nil ; all ignored
+                          :obj obj :geneqv nil :pequiv-info nil ; all ignored
                           )))
                      (cond
                       (relieve-hyps-ans
