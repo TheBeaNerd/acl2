@@ -5572,8 +5572,7 @@
                        :rdepth (rewrite-stack-limit wrld)
                        :step-limit step-limit
                        :type-alist type-alist
-                       ;; DAG: Which way do we want to do this?
-                       :obj (if not-flg nil t)
+                       :obj '?
                        :geneqv *geneqv-iff*
                        :pequiv-info nil
                        :wrld wrld
