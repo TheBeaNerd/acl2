@@ -1,7 +1,7 @@
 ; BV Library: Theorems about bvchop.
 ;
 ; Copyright (C) 2008-2011 Eric Smith and Stanford University
-; Copyright (C) 2013-2022 Kestrel Institute
+; Copyright (C) 2013-2024 Kestrel Institute
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
 ;
@@ -22,6 +22,7 @@
 (local (include-book "../arithmetic-light/floor"))
 (local (include-book "../arithmetic-light/mod"))
 (local (include-book "../arithmetic-light/mod-and-expt"))
+(local (include-book "kestrel/arithmetic-light/evenp" :dir :system))
 
 ;drop?
 (in-theory (disable unsigned-byte-p))
@@ -264,7 +265,7 @@
              0
            (- (expt 2 size) (bvchop size x))))
   :hints (("Goal" :use ((:instance bvchop-when-size-is-not-natp (i (- x)))
-                        (:instance bvchop-of-minus-helper))
+                        bvchop-of-minus-helper)
            :in-theory (disable bvchop-when-size-is-not-posp
                                bvchop-when-size-is-not-posp
                                expt))))
@@ -319,7 +320,7 @@
                 (integerp z))
            (equal (bvchop m (+ z (bvchop n y)))
                   (bvchop m (+ (ifix y) z))))
-  :hints (("Goal" :use (:instance bvchop-sum-drop-bvchop) :in-theory (disable bvchop-sum-drop-bvchop))))
+  :hints (("Goal" :use bvchop-sum-drop-bvchop :in-theory (disable bvchop-sum-drop-bvchop))))
 
 (defthm bvchop-of-expt-hack
   (equal (bvchop (+ -1 n) (expt 2 n))
@@ -490,7 +491,7 @@
                  (natp n))
            (equal (bvchop m (* y (bvchop n x)))
                   (bvchop m (* y x))))
-  :hints (("Goal" :use (:instance bvchop-times-cancel-better)
+  :hints (("Goal" :use bvchop-times-cancel-better
            :in-theory (disable bvchop-times-cancel-better))))
 
 (defthm bvchop-of-+-of-expt
@@ -515,7 +516,7 @@
   :hints (("Goal" :cases ((natp size)))))
 
 ;rename?
-;see also <-lemma-for-known-operators2 but that one probably requires a constant for the width
+;see also <-lemma-for-known-operators-axe2 but that one probably requires a constant for the width
 (defthm bvchop-numeric-bound
   (implies (and (syntaxp (quotep k))
                 (<= k 0))
@@ -744,7 +745,7 @@
            (implies (unsigned-byte-p size (* (bvchop size x) (bvchop size y)))
                     (equal (bvchop size (* x y))
                            (* (bvchop size x) (bvchop size y)))))
-  :hints (("Goal" :use ((:instance bvchop-of-*-of-bvchop)
+  :hints (("Goal" :use (bvchop-of-*-of-bvchop
                         (:instance bvchop-of-*-of-bvchop-arg2
                                    (x (bvchop size x))))
            :in-theory (disable bvchop-of-*-of-bvchop
@@ -839,3 +840,40 @@
                                   (s2 freesize)
                                   (s1 size))
            :in-theory (disable <-of-bvchop-and-bvchop-same))))
+
+(defthm evenp-of-bvchop
+  (implies (and (< 1 n)
+                (integerp n))
+           (equal (evenp (bvchop n x))
+                  (equal 0 (bvchop 1 x))))
+  :hints (("Goal" :in-theory (enable bvchop))))
+
+(defthm bvchop-of-sum-expt
+  (implies (and (natp size)
+                (integerp y)
+                (integerp x))
+           (equal (bvchop size (+ x (expt 2 size) y))
+                  (bvchop size (+ x y))))
+  :hints (("Goal" :in-theory (enable bvchop-of-sum-cases))))
+
+(defthm bvchop-of-sum-minus-expt
+  (implies (and (natp size)
+                (integerp x))
+           (equal (bvchop size (+ x (- (expt 2 size))))
+                  (bvchop size x)))
+  :hints (("Goal" :in-theory (enable bvchop-of-sum-cases))))
+
+(defthm bvchop-of-sum-minus-expt-alt
+  (implies (and (natp size)
+                (integerp x)
+                (integerp y))
+           (equal (bvchop size (+ x (- (expt 2 size)) y))
+                  (bvchop size (+ x y))))
+  :hints (("Goal" :in-theory (enable bvchop-of-sum-cases))))
+
+(defthm bvchop-of-plus-of-times-expt
+  (implies (and (natp size)
+                (integerp x)
+                (integerp y))
+           (equal (bvchop size (+ x (* (expt 2 size) y)))
+                  (bvchop size x))))

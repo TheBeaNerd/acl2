@@ -1,6 +1,6 @@
 ; Replaying the events in a book (perhaps with changes).
 ;
-; Copyright (C) 2022-2023 Kestrel Institute
+; Copyright (C) 2022-2024 Kestrel Institute
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
 ;
@@ -28,6 +28,8 @@
 ;; TOOD: Handle defsection
 ;; TODO: Handle define (prepwork, ///, etc.)
 ;; TODO: Handle defrule
+;; TODO: Handle with-output
+;; TODO: Perhaps try turning off tau, to see if that saves a lot of time.
 
 (include-book "kestrel/file-io-light/read-objects-from-file" :dir :system)
 (include-book "kestrel/utilities/submit-events" :dir :system) ; todo: use prove$ instead
@@ -36,6 +38,8 @@
 (include-book "kestrel/utilities/split-path" :dir :system)
 (include-book "kestrel/utilities/translate" :dir :system)
 (include-book "kestrel/utilities/all-included-books" :dir :system)
+(include-book "kestrel/utilities/extend-pathname-dollar" :dir :system)
+(include-book "kestrel/utilities/maybe-add-dot-lisp-extension" :dir :system)
 (include-book "kestrel/lists-light/remove-nth" :dir :system)
 (include-book "kestrel/world-light/defthm-or-defaxiom-symbolp" :dir :system)
 (include-book "kestrel/hints/remove-hints" :dir :system)
@@ -45,6 +49,26 @@
 (include-book "linter")
 (include-book "speed-up")
 (local (include-book "kestrel/typed-lists-light/string-listp" :dir :system))
+
+;move
+(defund duplicate-items-aux (lst acc)
+  (declare (xargs :guard (and (true-listp lst)
+                              (true-listp acc))))
+  (if (endp lst)
+      acc
+    (let ((item (first lst))
+          (rest (rest lst)))
+      (if (and (member-equal item rest) ; it's a dup
+               (not (member-equal item acc)) ; don't report more than once
+               )
+          (duplicate-items-aux (rest lst) (cons item acc))
+        (duplicate-items-aux (rest lst) acc)))))
+
+;; Returns a list of the items that appear more than once in LST.
+;move
+(defund duplicate-items (lst)
+  (declare (xargs :guard (true-listp lst)))
+  (duplicate-items-aux lst nil))
 
 ;; Returns state
 ;move
@@ -59,16 +83,6 @@
         (prog2$ (er hard? 'set-cbd-simple "Failed to set the cbd to ~x0." cbd)
                 state)
       state)))
-
-
-;; Drop-in replacement for extend-pathname that doesn't fail on stuff like
-;; (extend-pathname "." "../foo" state).
-;; Note: This can add a slash if the filename is a dir.
-;move
-(defund extend-pathname$ (dir filename state)
-  (declare (xargs :stobjs state
-                  :mode :program))
-  (extend-pathname (canonical-pathname dir t state) filename state))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -101,17 +115,6 @@
           state))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; todo: make this lowercase?
-(defun print-to-string (item)
-  (declare (xargs :mode :program))
-  (mv-let (col string)
-    (fmt1-to-string "~X01" (acons #\0 item (acons #\1 nil nil)) 0
-                    :fmt-control-alist
-                    `((fmt-soft-right-margin . 10000)
-                      (fmt-hard-right-margin . 10000)))
-    (declare (ignore col))
-    string))
 
 (defun abbreviate-event (event)
   (declare (xargs :guard t
@@ -177,7 +180,7 @@
       (if skipp
           (submit-and-check-events (rest events) skip-proofsp skip-localsp print state)
         (mv-let (erp state)
-          (submit-event (if skip-proofsp event `(skip-proofs ,event))
+          (submit-event (if skip-proofsp `(skip-proofs ,event) event)
                         nil ;print
                         nil state)
           (if erp
@@ -318,28 +321,6 @@
              description
              (theorems-with-new-hints defthm-variant name term (rest alist))))))
 
-;; Returns a string
-(defun decode-breakage-type (bt)
-  (declare (xargs :guard (consp bt)
-                  :mode :program))
-  (let ((type (car bt))
-        (arg (cadr bt)))
-    (case type
-      (:remove-by (concatenate 'string "Drop :by " (print-to-string arg)))
-      (:remove-cases (concatenate 'string "Drop :cases " (print-to-string arg)))
-      (:remove-induct (concatenate 'string "Drop :induct " (print-to-string arg)))
-      (:remove-nonlinearp (concatenate 'string "Drop :nonlinearp  " (print-to-string arg)))
-      (:remove-do-not (concatenate 'string "Drop :do-not " (print-to-string arg)))
-      (:remove-do-not-item (concatenate 'string "Drop :do-not item " (print-to-string arg)))
-      (:remove-expand (concatenate 'string "Drop :expand " (print-to-string arg)))
-      (:remove-expand-item (concatenate 'string "Drop :expand item " (print-to-string arg)))
-      (:remove-use (concatenate 'string "Drop :use " (print-to-string arg)))
-      (:remove-use-item (concatenate 'string "Drop :use item " (print-to-string arg)))
-      (:remove-enable-item (concatenate 'string "Drop enable of " (print-to-string arg)))
-      (:remove-disable-item (concatenate 'string "Drop disable of " (print-to-string arg)))
-      (:remove-in-theory (concatenate 'string "Drop :in-theory " (print-to-string arg)))
-      (otherwise (er hard? 'decode-breakage-type "Unknown breakage type: ~x0." bt)))))
-
 ;; Returns an alist from new keyword-value-lists to decsriptions
 (defun remove-hint-parts-and-label-aux (n ways keyword-value-list goal-name)
   (declare (xargs :mode :program))
@@ -347,17 +328,17 @@
           (not (mbt (natp ways)))
           (<= ways n))
       nil
-    (mv-let (breakage-type new-keyword-value-list)
-      (break-hint-keyword-value-list-in-nth-way n keyword-value-list)
+    (mv-let (removal-type new-keyword-value-list)
+      (remove-from-hint-keyword-value-list-in-nth-way n keyword-value-list)
       (acons new-keyword-value-list
-             ;; the breakage-type currently include the "remove":
-             (concatenate 'string (newline-string) "  For \"" goal-name "\": " (decode-breakage-type breakage-type))
+             ;; the removal-type currently include the "remove":
+             (concatenate 'string (newline-string) "  For \"" goal-name "\": " (decode-removal-type removal-type))
              (remove-hint-parts-and-label-aux (+ 1 n) ways keyword-value-list goal-name)))))
 
 ;; Returns an alist from new keyword-value-lists to decsriptions
 (defun remove-hint-parts-and-label (keyword-value-list goal-name)
   (declare (xargs :mode :program))
-  (let ((ways (num-ways-to-break-hint-keyword-value-list keyword-value-list)))
+  (let ((ways (num-ways-to-remove-from-hint-keyword-value-list keyword-value-list)))
     (remove-hint-parts-and-label-aux 0 ways keyword-value-list goal-name)))
 
 (defun replace-hints-for-goal-name (hints goal-name new-keyword-value-list)
@@ -431,36 +412,36 @@
            (ignore rest-events) ; for now, todo: use these when trying to change the theorem statement
            )
   (prog2$
-   (and print (cw " (For ~x0: " (first (rest event))))
+   (and print (cw " (For ~x0:" (first (rest event))))
    (let* ((defthm-variant (first event))
           (defthm-args (rest event))
           (name (first defthm-args))
           (body (second defthm-args))
           (keyword-value-list (rest (rest defthm-args)))
-          (hintsp (assoc-keyword :hints keyword-value-list)))
+          (hintsp (assoc-keyword :hints keyword-value-list))
+          (hints (cadr hintsp)))
      (if (defthm-or-defaxiom-symbolp name (w state))
          ;; It already exists (presumably identical):
-         (prog2$ (cw "  Drop (redundant).)~%") ; no more checking to do, though we have seen a redundant event with a bad subst in the hints...
+         (prog2$ (cw "   Drop (redundant).)~%") ; no more checking to do, though we have seen a redundant event with a bad subst in the hints...
                  (mv nil state))
        (let* ( ;; TODO: Try deleting the :otf-flg
               ;; Try removing hints:
               (state (if (not hintsp)
                          state ; no hints to try dropping
                        (let ((event-without-hints `(,defthm-variant ,name ,body ,@(remove-keyword :hints keyword-value-list)))
-                             (drop-hints-message (concatenate 'string (newline-string) "  Drop all :hints.")))
+                             (drop-hints-message (concatenate 'string (newline-string) "   Drop all :hints.")))
                          (mv-let (improvement-foundp state)
                            (try-improved-event event-without-hints drop-hints-message state)
                            (if improvement-foundp
                                state
                              ;; could not drop all hints, so try one by one:
-                             (let* ((hints (cadr hintsp))
-                                    (alist (defthms-with-removed-hints defthm-variant name body hints)))
+                             (let* ((alist (defthms-with-removed-hints defthm-variant name body hints)))
                                (mv-let (improvement-foundp state)
                                  (try-improved-events alist nil state)
                                  (declare (ignore improvement-foundp)) ;todo: don't bother to return this?
                                  state)))))))
               ;; Apply the linter:
-              (state (lint-defthm name (translate-term body 'improve-defthm-event (w state)) nil 100000 state)))
+              (state (lint-defthm name (translate-term body 'improve-defthm-event (w state)) hints nil 100000 state)))
          ;; Try to speed up the proof:
          (mv-let (erp state)
            (speed-up-defthm event print state)
@@ -481,7 +462,7 @@
            (ignore rest-events) ; for now, todo: use these when trying to change the theorem statement
            )
   (progn$
-   (and print (cw " (For ~x0: " (first (rest event))))
+   (and print (cw " (For ~x0:" (first (rest event))))
    ;; todo: try to improve hints, etc.
    ;; Must submit it before we lint it:
    (mv-let (erp state)
@@ -506,7 +487,7 @@
            (ignore rest-events) ; for now, todo: use these when trying to change the theorem statement
            )
   (prog2$
-   (and print (cw " (For ~x0: " (first (rest event))))
+   (and print (cw " (For ~x0:" (first (rest event))))
    (mv-let (erp state)
      (speed-up-defrule event state)
      (declare (ignore erp)) ; todo: why?
@@ -520,7 +501,7 @@
                   :stobjs state)
            (ignore rest-events) ; for now, todo: use these when trying to change the theorem statement
            )
-  (prog2$ (and print (cw " (For ~x0: )~%" event))
+  (prog2$ (and print (cw " (For ~x0:)~%" event))
           (mv nil state)))
 
 ;; ;; Test whether the given book is incldued in the wrld.  FILENAME should include the .lisp extension.
@@ -548,7 +529,7 @@
           (full-path (extend-pathname$ (or dir ".") (concatenate 'string book ".lisp") state)))
      (if (member-equal full-path initial-included-books)
          ;; Redundant and unable to trying dropping it (probably because it is included by improve-book itself):
-         (prog2$ (cw "~%   Skipping: already included in session).~%")
+         (prog2$ (cw "~%   Skipping: Already included before improve-book was called.)~%")
                  (submit-event-expect-no-error event nil state))
        (if (member-equal full-path (all-included-books (w state)))
            (prog2$ (cw "~%   Drop include (redundant).)~%" event nil)
@@ -623,7 +604,7 @@
     ((defun defund) (improve-defun-event event rest-events print state))
     ((defxdoc defxdoc+) (submit-event event nil nil state) ; todo: anything to check?
      )
-    ((encapsulate) (submit-event event nil nil state) ; todo: handle!
+    ((encapsulate) (submit-event event nil nil state) ; todo: handle! may be easy if no constrained functions and no local events
      )
     (include-book (improve-include-book-event event rest-events initial-included-books print state) )
     ((in-package) (improve-in-package-event event rest-events print state))
@@ -639,7 +620,7 @@
 
 ;; Submits each event, after printing suggestions for improving it.
 ;; Returns (mv erp state).
-(defun improve-events (events initial-included-books print state)
+(defun improve-events-aux (events initial-included-books print state)
   (declare (xargs :guard (and (true-listp events)
                               (string-listp initial-included-books))
                   :mode :program
@@ -650,12 +631,48 @@
       (improve-event (first events) (rest events) initial-included-books print state)
       (if erp
           (mv erp state)
-        (improve-events (rest events) initial-included-books print state)))))
+        (improve-events-aux (rest events) initial-included-books print state)))))
+
+(defun improve-events (events initial-included-books print state)
+  (declare (xargs :guard (and (true-listp events)
+                              (string-listp initial-included-books))
+                  :mode :program
+                  :stobjs state))
+  (prog2$ (let ((dupes (duplicate-items events)))
+            (and dupes
+                 ;; Some dupes may be okay, such as (logic) and (program), but
+                 ;; that seems like bad style.
+                 (cw "(Duplicate events: ~X01.)~%" dupes nil)))
+          ;; todo: do local incompat checking without include-books (or making them local) here?
+          (improve-events-aux events initial-included-books print state)))
+
+
+
+;; Returns (mv erp forms full-book-path state).
+;move
+(defund read-book-contents (bookname
+                            dir ; todo: allow keyword dirs
+                            state)
+  (declare (xargs :guard (and (stringp bookname)
+                              (or (eq :cbd dir)
+                                  (stringp dir)))
+                  :mode :program ; todo
+                  :stobjs state))
+  (let* ((file-name (maybe-add-dot-lisp-extension bookname))
+         (full-book-path (extend-pathname$ (if (eq dir :cbd) "." dir) file-name state)))
+    (mv-let (existsp state)
+      (file-write-date$ full-book-path state)
+      (if (not existsp)
+          (prog2$ (er hard? 'read-book-contents "~s0 does not exist." full-book-path)
+                  (mv :file-does-not-exist nil full-book-path state))
+        (mv-let (erp events state)
+          (read-objects-from-book full-book-path state)
+          (mv erp events full-book-path state))))))
 
 ;; Returns (mv erp state).
 ;; TODO: Set induction depth limit to nil?
-(defun improve-book-fn-aux (bookname ; no extension
-                            dir
+(defun improve-book-fn-aux (bookname ; may include .lisp extension
+                            dir      ; todo: allow a keyword?
                             print
                             state)
   (declare (xargs :guard (and (stringp bookname)
@@ -664,40 +681,33 @@
                               (member-eq print '(nil :brief :verbose)))
                   :mode :program ; because this calls submit-events
                   :stobjs state))
-  (let* ((file-name (if (string-ends-withp bookname ".lisp") ; tolerate existing .lisp extension
-                        bookname
-                      (concatenate 'string bookname ".lisp")))
-         (full-book-path (extend-pathname$ (if (eq dir :cbd) "." dir) file-name state)))
-    (mv-let (existsp state)
-      (file-write-date$ full-book-path state)
-      (if (not existsp)
-          (prog2$ (er hard? 'improve-book-fn-aux "~s0 does not exist." full-book-path)
-                  (mv :file-does-not-exist state))
-        (let ((state (widen-margins state)))
-          (prog2$
-           (and print (cw "~%~%(IMPROVING ~x0.~%" full-book-path)) ; matches the close paren below
-           (let* ((old-cbd (cbd-fn state))
-                  (full-book-dir (dir-of-path full-book-path))
-                  (initial-included-books (all-included-books (w state)))
-                  ;; We set the CBD so that the book is replayed in its own directory:
-                  (state (set-cbd-simple full-book-dir state))
-                  ;; Load the .port file, so that packages (especially) exist:
-                  (state (load-port-file-if-exists (strip-suffix-from-string ".lisp" full-book-path) state)))
-             (mv-let (erp events state)
-               (read-objects-from-book full-book-path state)
-               (if erp
-                   (let* ((state (unwiden-margins state))
-                          (state (set-cbd-simple old-cbd state)))
-                     (mv erp state))
-                 (progn$ (and (eq print :verbose) (cw "  Book contains ~x0 forms.~%~%" (len events)))
-                         (mv-let (erp state)
-                           (improve-events events initial-included-books print state)
-                           (let* ((state (unwiden-margins state))
-                                  (state (set-cbd-simple old-cbd state)))
-                             (prog2$ (cw ")")
-                                     (mv erp state))))))))))))))
+  (mv-let (erp events full-book-path state)
+    (read-book-contents bookname dir state)
+    (if erp
+        (mv erp state)
+      (let* ((state (widen-margins state))
+             (fake (TIME-TRACKER-FN 'NIL 'NIL 'NIL 'NIL 'NIL 'NIL 'NIL)) ; from :trans (time-tracker nil)
+             )
+        (declare (ignore fake))
+        (prog2$
+         (and print (cw "~%~%(IMPROVING ~x0.~%" full-book-path)) ; matches the close paren below
+         (let* ((old-cbd (cbd-fn state))
+                (full-book-dir (dir-of-path full-book-path))
+                ;; We set the CBD so that the book is replayed in its own directory:
+                (state (set-cbd-simple full-book-dir state))
+                ;; Load the .port file, so that packages (especially) exist:
+                (state (load-port-file-if-exists (strip-suffix-from-string ".lisp" full-book-path) state))
+                ;; We cannot try omitting these from the book:
+                (initial-included-books (all-included-books (w state))))
+           (progn$ (and (eq print :verbose) (cw "  Book contains ~x0 forms.~%~%" (len events)))
+                   (mv-let (erp state)
+                     (improve-events events initial-included-books print state)
+                     (let* ((state (unwiden-margins state))
+                            (state (set-cbd-simple old-cbd state)))
+                       (prog2$ (cw ")")
+                               (mv erp state)))))))))))
 
-;; Returns (mv erp nil state).
+;; Returns (mv erp nil state).  Does not change the world.
 (defun improve-book-fn (bookname ; no extension
                         dir
                         print

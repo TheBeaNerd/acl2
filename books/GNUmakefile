@@ -572,16 +572,23 @@ OK_CERTS := $(filter-out $(BROKEN_BOOKS), $(OK_CERTS))
 # idea to include targets here that are in ACL2_CUSTOM_TARGETS:
 # SLOW_BOOKS is removed from OK_CERTS just below, but later,
 # ACL2_CUSTOM_TARGETS adds its targets to OK_CERTS.
+# NOTE: kestrel/acl2data/gather/tests/run-tests.lisp isn't slow, but
+# we include it here so that it is not certified during ACL2(p)
+# regressions, since regression-everything is not generally run for
+# ACl2(p).  Its certification fails with ACL2(p), even with
+# waterfall-parallelism turned off, and it doesn't seem worthwhile to
+# investigate why.
 
 SLOW_BOOKS := \
-  books/misc/check-acl2-exports.cert \
   coi/defung/defung-stress-long.cert \
   models/jvm/m5/apprentice.cert \
   system/parallel/proofs/ideal-speedup.cert \
   workshops/2009/sumners/support/examples.cert \
   workshops/2011/krug-et-al/support/MinVisor/va-to-pa-thm.cert \
   workshops/2011/krug-et-al/support/MinVisor/setup-nested-page-tables.cert \
-  workshops/2013/hardin-hardin/support/APSP.cert
+  workshops/2013/hardin-hardin/support/APSP.cert \
+  demos/ppr1-experiments-thm-1-ppr1.cert \
+  kestrel/acl2data/gather/tests/run-tests.cert
 
 # The following could well be considered as slow books, too.
 # top.cert
@@ -647,14 +654,14 @@ CLEAN_FILES_EXPLICIT := \
    projects/apply-model-2/ex1/evaluation-apply.lisp \
    projects/apply-model-2/ex1/evaluation-user-defs.lisp \
    projects/apply-model-2/ex2/evaluation-apply.lisp \
-   projects/apply-model-2/ex2/evaluation-user-defs.lisp \
-   demos/event-data/.sys
+   projects/apply-model-2/ex2/evaluation-user-defs.lisp
 
 MORECLEAN_FILES_EXPLICIT := \
    doc/manual \
    system/doc/manual \
    system/doc/manual-fast \
-   doc/xdoc.sao
+   doc/xdoc.sao \
+   kestrel/acl2data/gather/tests/runs
 
 .PHONY: clean_books clean
 

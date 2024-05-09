@@ -1,7 +1,7 @@
 ; Parsing an x86 executable
 ;
 ; Copyright (C) 2016-2019 Kestrel Technology, LLC
-; Copyright (C) 2020-2022 Kestrel Institute
+; Copyright (C) 2020-2024 Kestrel Institute
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
 ;
@@ -14,6 +14,7 @@
 (include-book "parse-mach-o-file")
 (include-book "parse-pe-file")
 (include-book "parse-elf-file")
+(include-book "kestrel/utilities/file-existsp" :dir :system)
 (include-book "kestrel/lists-light/len-at-least" :dir :system)
 (include-book "kestrel/file-io-light/read-file-into-byte-list" :dir :system)
 
@@ -27,10 +28,9 @@
                               (stringp filename))
                   :verify-guards nil ; todo
                   ))
-  (b* (((when (not (acl2::len-at-least 4 bytes)))
-        (prog2$ (er hard? 'parse-executable-bytes "Not enough bytes in file: ~x0.  Result: ~x1" filename bytes)
-                (mv t nil)))
-       ((mv magic-number &) (parse-u32 bytes)))
+  (b* (((mv erp magic-number)
+        (parse-executable-magic-number bytes filename))
+       ((when erp) (mv erp nil)))
     (if (eq magic-number *elf-magic-number*)
         (prog2$ (cw "ELF file detected.~%")
                 (mv nil ;no error
@@ -47,13 +47,14 @@
             (mv t
                 (er hard? 'parse-executable-bytes "Unexpected kind of file (not PE, ELF, or Mach-O).  Magic number is ~x0. PE file signature is ~x1" magic-number sig))))))))
 
-;; Parse a PE or Mach-O executable (TODO: Add support for ELF).
+;; Parses a PE or Mach-O or ELF executable.
 ;; Returns (mv erp contents state) where contents in an alist representing
 ;; the contents of the executable (exact format depends on the type of
 ;; the executable).
 (defun parse-executable (filename state)
   (declare (xargs :stobjs state
-                  :mode :program
+                  ;:mode :program
+                  :verify-guards nil
                   :guard (stringp filename)))
   (b* (((mv existsp state) (file-existsp filename state))
        ((when (not existsp))

@@ -196,6 +196,7 @@
                                    ;;SBVREM-BECOMES-BVMOD
                                    EXPT-HALF-LINEAR
                                    EQUAL-OF-BVCHOP-AND-BVCHOP-ONE-WIDER
+                                   UNSIGNED-BYTE-P-OF-+
                                    )))))
 
 ;todo: simplify the rhs (do we know what sbvrem does in each case?)
@@ -224,8 +225,7 @@
                               sbvmoddown-rewrite-case-3
                               sbvmoddown-rewrite-case-4
                               sbvmoddown-rewrite-case-5
-                              sbvlt-rewrite
-                              ))))
+                              sbvlt-rewrite))))
 
 ;todo: gen the 16
 (defthm sbvmoddown-of-16

@@ -1,17 +1,18 @@
 ; C Library
 ;
-; Copyright (C) 2023 Kestrel Institute (http://www.kestrel.edu)
-; Copyright (C) 2023 Kestrel Technology LLC (http://kestreltechnology.com)
+; Copyright (C) 2024 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2024 Kestrel Technology LLC (http://kestreltechnology.com)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
-; Author: Alessandro Coglio (coglio@kestrel.edu)
+; Author: Alessandro Coglio (www.alessandrocoglio.info)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (in-package "C")
 
 (include-book "read-write-variables")
+(include-book "../language/pointer-operations")
 
 (local (include-book "kestrel/built-ins/disable" :dir :system))
 (local (acl2::disable-most-builtin-logic-defuns))
@@ -277,7 +278,7 @@
    (xdoc::p
     "This is an auxiliary function, used by others below."))
   (b* (((when (endp scopes)) nil)
-       (var-val (omap::in (ident-fix var) (scope-fix (car scopes))))
+       (var-val (omap::assoc (ident-fix var) (scope-fix (car scopes))))
        ((when (consp var-val)) t))
     (var-in-scopes-p var (cdr scopes)))
   :hooks (:fix)
@@ -303,8 +304,8 @@
     :prep-lemmas
     ((defrule lemma
        (implies (and (scopep x)
-                     (consp (omap::in k x)))
-                (cdr (omap::in k x)))
+                     (consp (omap::assoc k x)))
+                (cdr (omap::assoc k x)))
        :use valuep-of-cdr-of-in-scopep
        :disable valuep-of-cdr-of-in-scopep))))
 
@@ -367,7 +368,7 @@
      :parents nil
      (b* (((when (endp scopes)) nil)
           (scope (scope-fix (car scopes)))
-          (pair (omap::in (ident-fix var) scope))
+          (pair (omap::assoc (ident-fix var) scope))
           ((when (consp pair))
            (cons (omap::update (ident-fix var)
                                (remove-flexible-array-member val)
@@ -635,6 +636,11 @@
            (exit-scope compst))
     :enable (exit-scope add-var))
 
+  (defruled exit-scope-of-if*
+    (equal (exit-scope (if* a b c))
+           (if* a (exit-scope b) (exit-scope c)))
+    :enable if*)
+
   (defval *atc-exit-scope-rules*
     '(exit-scope-of-enter-scope
       exit-scope-of-add-var)))
@@ -667,7 +673,7 @@
     (b* ((frame (top-frame compst))
          (scopes (frame->scopes frame))
          (scope (car scopes)))
-      (not (consp (omap::in (ident-fix var) scope))))
+      (not (consp (omap::assoc (ident-fix var) scope))))
     :hooks (:fix))
 
   (defruled create-var-okp-of-add-frame
@@ -698,6 +704,11 @@
     :expand (update-var-aux var2
                             val
                             (frame->scopes (car (compustate->frames compst)))))
+
+  (defruled create-var-okp-of-update-object
+    (equal (create-var-okp var (update-object objdes val compst))
+           (create-var-okp var compst))
+    :enable (create-var-okp update-object top-frame))
 
   (defruled create-var-to-add-var
     (implies (and (create-var-okp var compst)
@@ -752,7 +763,7 @@
          (autop (var-in-scopes-p var scopes))
          ((when autop) (write-var-aux-okp var val scopes))
          (static (compustate->static compst))
-         (pair (omap::in (ident-fix var) static)))
+         (pair (omap::assoc (ident-fix var) static)))
       (and (consp pair)
            (equal (type-of-value (cdr pair))
                   (type-of-value val))))
@@ -763,7 +774,7 @@
        :parents nil
        (b* (((when (endp scopes)) nil)
             (scope (scope-fix (car scopes)))
-            (pair (omap::in (ident-fix var) scope))
+            (pair (omap::assoc (ident-fix var) scope))
             ((when (consp pair))
              (equal (type-of-value (cdr pair))
                     (type-of-value val))))
@@ -909,6 +920,23 @@
                 (var-in-scopes-p var scopes))
        :induct t
        :enable (var-in-scopes-p write-auto-var-aux))))
+
+  (defruled write-var-to-write-static-var
+    (implies (not (var-autop var compst))
+             (equal (write-var var val compst)
+                    (write-static-var var val compst)))
+    :enable write-var
+    :prep-lemmas
+    ((defrule not-write-auto-var-when-not-var-autop
+       (implies (not (var-autop var compst))
+                (not (write-auto-var var val compst)))
+       :enable (write-auto-var var-autop)
+       :prep-lemmas
+       ((defrule not-write-auto-var-aux-when-not-var-in-scopes-p
+          (implies (not (var-in-scopes-p var scopes))
+                   (not (write-auto-var-aux var val scopes)))
+          :induct t
+          :enable (var-in-scopes-p write-auto-var-aux))))))
 
   (defval *atc-write-var-rules*
     '(write-var-to-update-var
@@ -1094,6 +1122,11 @@
              read-auto-var
              var-in-scopes-p-when-read-auto-var-aux))
 
+  (defruled read-var-of-if*
+    (equal (read-var var (if* a b c))
+           (if* a (read-var var b) (read-var var c)))
+    :enable if*)
+
   (defval *atc-read-var-rules*
     '(read-var-of-add-frame
       read-var-of-enter-scope
@@ -1131,7 +1164,7 @@
     :returns (yes/no booleanp)
     :parents nil
     (b* ((static (compustate->static compst))
-         (pair (omap::in (ident-fix var) static)))
+         (pair (omap::assoc (ident-fix var) static)))
       (and (consp pair)
            (equal (type-of-value (cdr pair))
                   (type-of-value val))))
@@ -1245,7 +1278,7 @@
     :enable (read-static-var
              add-frame
              push-frame)
-    :disable omap::in-when-in-tail)
+    :disable omap::assoc-when-assoc-tail)
 
   (defruled read-static-var-of-enter-scope
     (equal (read-static-var var (enter-scope compst))
@@ -1254,7 +1287,7 @@
              enter-scope
              push-frame
              pop-frame)
-    :disable omap::in-when-in-tail)
+    :disable omap::assoc-when-assoc-tail)
 
   (defruled read-static-var-of-add-var
     (equal (read-static-var var (add-var var2 val compst))
@@ -1263,7 +1296,7 @@
              add-var
              push-frame
              pop-frame)
-    :disable omap::in-when-in-tail)
+    :disable omap::assoc-when-assoc-tail)
 
   (defruled read-static-var-of-update-var
     (implies (not (equal (ident-fix var)
@@ -1274,7 +1307,7 @@
              update-var
              push-frame
              pop-frame)
-    :disable omap::in-when-in-tail)
+    :disable omap::assoc-when-assoc-tail)
 
   (defruled read-static-var-of-update-static-var
     (equal (read-static-var var (update-static-var var2 val compst))
@@ -1289,7 +1322,7 @@
            (read-static-var var compst))
     :enable (read-static-var
              update-object)
-    :disable omap::in-when-in-tail)
+    :disable omap::assoc-when-assoc-tail)
 
   (defval *atc-read-static-var-rules*
     '(read-static-var-of-add-frame
@@ -1524,7 +1557,7 @@
     (b* (((unless (objdesign-case objdes :alloc)) nil)
          (addr (objdesign-alloc->get objdes))
          (heap (compustate->heap compst))
-         (addr+obj (omap::in addr heap))
+         (addr+obj (omap::assoc addr heap))
          ((unless (consp addr+obj)) nil)
          (obj (cdr addr+obj))
          ((unless (equal (type-of-value val)
@@ -1594,6 +1627,21 @@
                            (type-of-value old-val))))
     :enable (write-object-okp
              read-object))
+
+  (defruled write-object-okp-of-if*-val
+    (implies (and (write-object-okp objdes b compst)
+                  (write-object-okp objdes c compst))
+             (write-object-okp objdes (if* a b c) compst))
+    :enable if*)
+
+  (defruled write-object-okp-when-valuep-of-read-object-no-syntaxp
+    (implies (and (equal (objdesign-kind objdes) :alloc)
+                  (equal old-val (read-object objdes compst))
+                  (valuep old-val))
+             (equal (write-object-okp objdes val compst)
+                    (equal (type-of-value val)
+                           (type-of-value old-val))))
+    :enable (write-object-okp-when-valuep-of-read-object))
 
   (defruled write-object-to-update-object
     (implies (write-object-okp objdes val compst)
@@ -1724,6 +1772,13 @@
            (read-static-var var compst))
     :enable (read-object
              read-static-var))
+
+  (defruled read-object-of-value-pointer->designator-of-if*
+    (equal (read-object (value-pointer->designator ptr) (if* a b c))
+           (if* a
+                (read-object (value-pointer->designator ptr) b)
+                (read-object (value-pointer->designator ptr) c)))
+    :enable if*)
 
   (defval *atc-read-object-rules*
     '(read-object-of-add-frame
@@ -1872,6 +1927,13 @@
              update-object
              objdesign->base-address))
 
+  (defruled update-object-of-if*-val
+    (equal (update-object objdes (if* a b c) compst)
+           (if* a
+                (update-object objdes b compst)
+                (update-object objdes c compst)))
+    :enable if*)
+
   (defval *atc-update-object-rules*
     '(update-object-of-add-frame
       update-object-of-enter-scope
@@ -1963,7 +2025,7 @@
     :enable (update-static-var
              read-static-var
              identity)
-    :disable omap::in-when-in-tail
+    :disable omap::assoc-when-assoc-tail
     :use (:instance update-static-var-of-read-static-var-same-lemma
                     (compst compst1))
     :prep-lemmas
@@ -1981,6 +2043,13 @@
                 top-frame
                 push-frame
                 pop-frame))))
+
+  (defruled update-static-var-of-if*-val
+    (equal (update-static-var var (if* a b c) compst)
+           (if* a
+                (update-static-var var b compst)
+                (update-static-var var c compst)))
+    :enable if*)
 
   (defval *atc-update-static-var-rules*
     '(update-static-var-of-add-frame

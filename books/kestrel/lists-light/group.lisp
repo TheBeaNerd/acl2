@@ -50,6 +50,14 @@
 
 ;todo: move some of these rules:
 
+;move
+(defthm items-have-len-of-myif
+  (equal (items-have-len n (myif test x y))
+         (myif test
+               (items-have-len n x)
+               (items-have-len n y)))
+  :hints (("Goal" :in-theory (enable myif))))
+
 (defthmd integerp-of-small-helper
   (implies (and (< x n)
                 (posp x)
@@ -197,13 +205,6 @@
            (equal (posp (+ -1 n))
                   (not (equal 1 n))))
   :rule-classes ((:rewrite :backchain-limit-lst (0))))
-
-
-
-(defthm <-of-+-cancel-first-and-first
-  (equal (< (+ x y) (+ x z))
-         (< y z)))
-
 
 ;; (defthm cdr-of-firstn
 ;;   (implies (and (natp n)
@@ -543,7 +544,7 @@
                                                   y))
                                   (group n (nthcdr (- n (mod (len x) n))
                                                    y)))))))
-  :hints (("Goal" :in-theory (e/d (group-of-append) (;MOD-OF-EXPT-OF-2-CONSTANT-VERSION ;+-BECOMES-BVPLUS-HACK
+  :hints (("Goal" :in-theory (e/d (group-of-append) (;MOD-OF-EXPT-OF-2-CONSTANT-VERSION
                                                                           MOD-TYPE
                                                                           MOD-bounded-by-modulus
                                                                           floor-bounded-by-/
@@ -566,7 +567,7 @@
                                                   y))
                                   (group n (nthcdr (- n (mod (len x) n))
                                                    y)))))))
-  :hints (("Goal" :in-theory (e/d (group-of-append) (;MOD-OF-EXPT-OF-2-CONSTANT-VERSION ;+-BECOMES-BVPLUS-HACK
+  :hints (("Goal" :in-theory (e/d (group-of-append) (;MOD-OF-EXPT-OF-2-CONSTANT-VERSION
                                                                           MOD-TYPE
                                                                           MOD-bounded-by-modulus
                                                                           floor-bounded-by-/

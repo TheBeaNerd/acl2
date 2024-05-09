@@ -180,3 +180,6 @@
       nil                         ;; warning or error?
     (let ((width (unquote quoted-width)))
       (term-should-be-trimmed-helper width term operators))))
+
+;; TODO: Consider adding logext, unary--
+(defconst *functions-convertible-to-bv* '(binary-logand binary-logior binary-logxor lognot binary-+))

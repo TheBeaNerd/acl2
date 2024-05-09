@@ -123,7 +123,7 @@
          "books/system/doc/rendered-doc-combined.lsp")
  'TOP
  "ACL2+Books Manual"
- "http://www.cs.utexas.edu/users/moore/acl2/manuals/current/rendered-doc-combined.lsp.gz"
+ "https://www.cs.utexas.edu/users/moore/acl2/manuals/current/rendered-doc-combined.lsp.gz"
  (concat *acl2-sources-dir* "TAGS-acl2-doc")
  (concat *acl2-sources-dir* "TAGS"))
 
@@ -1563,6 +1563,8 @@ searching from the top if no link is below the cursor."
   (switch-to-acl2-doc-buffer)
   (cond ((or (re-search-forward "[[][^ ]+]" nil t)
              (progn (goto-char (point-min))
+                    (beep)
+                    (message "Searching from the top...")
                     (re-search-forward "[[][^ ]+]" nil t)))
          (search-backward "[")
          (forward-char 1))
@@ -1577,6 +1579,8 @@ searching from the bottom if no link is below the cursor."
   (switch-to-acl2-doc-buffer)
   (cond ((or (re-search-backward "[[][^ ]+]" nil t)
              (progn (goto-char (point-max))
+                    (beep)
+                    (message "Searching from the bottom...")
                     (re-search-backward "[[][^ ]+]" nil t)))
          (forward-char 1))
         (t (error "There are no links on this page."))))

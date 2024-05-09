@@ -185,8 +185,8 @@
    targets   ; string list, keys of the pages linked to from source
    links-fal ; the fal being constructed
    )
-  (declare (xargs :guard (and (stringp source)
-                              (symbol-listp targets))))
+  (declare (xargs :guard (and (symbolp source)
+                              (string-listp targets))))
   (b* (((when (atom targets))
         links-fal)
        (target1      (car targets))
@@ -666,7 +666,7 @@
                         (er hard? 'make-sitemap-aux "No score for ~x0?~%" key)))
        (- (or (and (<= 0 rank)
                    (<= rank 200))
-              (er hard? 'make-sitemap-aux "Expected rank for ~x0 to be in [0, 200].~%")))
+              (er hard? 'make-sitemap-aux "Expected rank for ~x0 to be in [0, 200].~%" key)))
        (priority-str (priority-float (/ rank 200)))
 
        (acc (str::printtree-rconcat " <url>" acc))

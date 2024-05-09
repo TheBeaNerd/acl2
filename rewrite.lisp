@@ -1,5 +1,5 @@
 ; ACL2 Version 8.5 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2023, Regents of the University of Texas
+; Copyright (C) 2024, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -3898,7 +3898,7 @@ its attachment is ignored during proofs"))))
 ; there might or might not be at least one clause, but if we return a positive
 ; integer, then the term encoded in instrs is a tautology.
 
-  (declare (type (or null (unsigned-byte 29)) pflg))
+  (declare (type (or null #.*fixnat-type*) pflg))
   (cond ((null instrs)
          (let ((v (car stack)))
            (or (cond ((quotep v)
@@ -3915,7 +3915,7 @@ its attachment is ignored during proofs"))))
          0)
         (t (let ((caarinstrs (caar instrs))
                  (pflg (and pflg (1-f pflg))))
-             (declare (type (or null (unsigned-byte 29)) pflg))
+             (declare (type (or null #.*fixnat-type*) pflg))
              (case caarinstrs
                (push (if-interp (cdr instrs)
                                 (cons (cdr (car instrs))
@@ -4695,7 +4695,7 @@ its attachment is ignored during proofs"))))
 
 (defun rewrite-solidify-rec (bound term type-alist obj geneqv ens wrld ttree
                                    pot-lst pt)
-  (declare (type (unsigned-byte 29) bound))
+  (declare (type #.*fixnat-type* bound))
   (cond
    ((quotep term)
     (cond ((equal term *nil*) (mv *nil* ttree))
@@ -4805,7 +4805,7 @@ its attachment is ignored during proofs"))))
                                    rw-equivp)
                                0))
                       (t (1-f bound)))))
-                (declare (type (unsigned-byte 29) new-bound))
+                (declare (type #.*fixnat-type* new-bound))
                 (rewrite-solidify-rec new-bound (fargn eterm 2) type-alist
                                       obj geneqv ens wrld ttree
                                       pot-lst pt)))
@@ -5986,7 +5986,7 @@ its attachment is ignored during proofs"))))
 ; count-ifs of the args already processed and dot-product is the dot-product of
 ; the vector of those count-ifs and the counts already processed.
 
-  (declare (type (signed-byte 30) diff)
+  (declare (type #.*fixnum-type* diff)
            (xargs :guard (and (pseudo-term-listp args)
                               (integer-listp counts)
                               (equal (len args) (len counts)))))
@@ -5998,7 +5998,7 @@ its attachment is ignored during proofs"))))
          (too-many-ifs0 (cdr args) (cdr counts) diff ctx))
         (t
          (let ((count1 (the-fixnum! (count-ifs (car args)) ctx)))
-           (declare (type (unsigned-byte 29) count1))
+           (declare (type #.*fixnat-type* count1))
            (too-many-ifs0 (cdr args)
                           (cdr counts)
                           (the-fixnum! (+ (the-fixnum! (* count1
@@ -6065,11 +6065,11 @@ its attachment is ignored during proofs"))))
 ; not to go inside of quotes, returning a lower bound on the number of times
 ; term1 occurs in term2.
 
-  (declare (type (signed-byte 30) a m bound-m)
+  (declare (type #.*fixnum-type* a m bound-m)
            (xargs :measure (acl2-count term2)
                   :ruler-extenders (:lambdas)
                   :guard (and (pseudo-termp term2)
-                              (signed-byte-p 30 (+ bound-m m))
+                              (signed-byte-p *fixnum-bits* (+ bound-m m))
                               (<= 0 a)
                               (<= 0 m)
                               (<= 0 bound-m)
@@ -6085,11 +6085,11 @@ its attachment is ignored during proofs"))))
          (t (occur-cnt-bounded-lst term1 (fargs term2) a m bound-m)))))
 
 (defun occur-cnt-bounded-lst (term1 lst a m bound-m)
-  (declare (type (signed-byte 30) a m bound-m)
+  (declare (type #.*fixnum-type* a m bound-m)
            (xargs :measure (acl2-count lst)
                   :ruler-extenders (:lambdas)
                   :guard (and (pseudo-term-listp lst)
-                              (signed-byte-p 30 (+ bound-m m))
+                              (signed-byte-p *fixnum-bits* (+ bound-m m))
                               (<= 0 a)
                               (<= 0 m)
                               (<= 0 bound-m)
@@ -6097,7 +6097,7 @@ its attachment is ignored during proofs"))))
   (the-fixnum
    (cond ((endp lst) a)
          (t (let ((new (occur-cnt-bounded term1 (car lst) a m bound-m)))
-              (declare (type (signed-byte 30) new))
+              (declare (type #.*fixnum-type* new))
               (if (eql new -1)
                   -1
                 (occur-cnt-bounded-lst term1 (cdr lst) new m bound-m)))))))
@@ -6109,7 +6109,7 @@ its attachment is ignored during proofs"))))
 
 ; We assume (<= lhs rhs).
 
-  (declare (type (signed-byte 30) lhs rhs)
+  (declare (type #.*fixnum-type* lhs rhs)
            (xargs :guard (and (pseudo-term-listp args)
                               (pseudo-termp val)
                               (<= 0 lhs)
@@ -6118,13 +6118,13 @@ its attachment is ignored during proofs"))))
   (cond
    ((endp args) nil)
    (t (let ((x (the-fixnum! (count-ifs (car args)) ctx)))
-        (declare (type (signed-byte 30) x))
+        (declare (type #.*fixnum-type* x))
         (cond ((eql x 0)
                (too-many-ifs1 (cdr args) val lhs rhs ctx))
               (t (let ((lhs
                         (occur-cnt-bounded (car args) val lhs x
                                            (the-fixnum (- rhs x)))))
-                   (declare (type (signed-byte 30) lhs))
+                   (declare (type #.*fixnum-type* lhs))
                    (if (eql lhs -1)
                        -1
                      (too-many-ifs1 (cdr args) val lhs rhs ctx)))))))))
@@ -6223,7 +6223,7 @@ its attachment is ignored during proofs"))))
 ; viewed as the smaller, so we need to be confident that this is not a problem,
 ; and indeed it is not when we call max-form-count in smallest-common-subterms.
 
-  (the (signed-byte 30)
+  (the #.*fixnat-type*
     (cond ((variablep term) 0)
           ((fquotep term) (cons-count-bounded (cadr term)))
           ((eq (ffn-symb term) 'if)
@@ -6232,8 +6232,8 @@ its attachment is ignored during proofs"))))
           (t (max-form-count-lst (fargs term) 1)))))
 
 (defun max-form-count-lst (lst acc)
-  (declare (type (signed-byte 30) acc))
-  (the (signed-byte 30)
+  (declare (type #.*fixnat-type* acc))
+  (the #.*fixnat-type*
     (cond ((>= acc (fn-count-evg-max-val))
            (fn-count-evg-max-val))
           ((null lst) acc)
@@ -6880,7 +6880,7 @@ its attachment is ignored during proofs"))))
     (setq *step-limit-error-p* 'error)
     (throw 'step-limit-tag ; irrelevant value
            t))
-  (the (signed-byte 30)
+  (the #.*fixnum-type*
     (prog2$ (er hard? ctx str start where)
             -1)))
 
@@ -6917,7 +6917,7 @@ its attachment is ignored during proofs"))))
 ; current binding of a symbol.
 
                   (symbolp step-limit)))
-  `(the (signed-byte 30)
+  `(the #.*fixnum-type*
         (cond
          ((< 0 (the-fixnum ,step-limit))
           (1-f ,step-limit))
@@ -6963,7 +6963,7 @@ its attachment is ignored during proofs"))))
            (t (let ((call1
                      `(let ((step-limit
                              (decrement-step-limit step-limit)))
-                        (declare (type (signed-byte 30) step-limit))
+                        (declare (type #.*fixnum-type* step-limit))
                         ,call0))
                     (step-limit-tail (assoc-keyword :step-limit (cdr args))))
                 (cond (step-limit-tail
@@ -7009,7 +7009,7 @@ its attachment is ignored during proofs"))))
                 #-cltl2
                 ,(let ((var (gensym)))
                    `(let ((,var ,call))
-                      (declare (type (signed-byte 30) ,var))
+                      (declare (type #.*fixnum-type* ,var))
                       (setq *deep-gstack* gstack)
                       ,var)))
                (t ,call))
@@ -8306,7 +8306,7 @@ its attachment is ignored during proofs"))))
 
 (defun brr-prompt (channel state)
   (the2s
-   (signed-byte 30)
+   #.*fixnat-type*
    (fmt1 "~F0 ~s1~sr ~@2>"
          (list (cons #\0 (brr-depth state))
                (cons #\1 (f-get-global 'current-package state))
@@ -8589,9 +8589,6 @@ its attachment is ignored during proofs"))))
 ; (sym key . val) is a member of wrld.  We collect all the rules in val with
 ; :rune rune.  This function is patterned after info-for-x-rules.
 
-; Wart: If key is 'eliminate-destructors-rule, then val is a single rule, not a
-; list of rules.  We handle this case specially below.
-
 ; Warning: Keep this function in sync with info-for-x-rules.  In that spirit,
 ; note that tau rules never store runes and hence are completely ignored
 ; here, as in info-for-x-rules.
@@ -8637,9 +8634,9 @@ its attachment is ignored during proofs"))))
              (if (eq token :linear)
                  (collect-x-rules-of-rune 'linear-lemma rune val ans)
                  ans))
-            (eliminate-destructors-rule
+            (eliminate-destructors-rules
              (if (eq token :elim)
-                 (collect-x-rules-of-rune 'elim-rule rune (list val) ans)
+                 (collect-x-rules-of-rune 'elim-rule rune val ans)
                  ans))
             (congruences
              (if (member-eq token '(:congruence :equivalence))
@@ -8831,9 +8828,11 @@ its attachment is ignored during proofs"))))
 ; This function (sort of) initializes the persistent-whs for the brr wormhole.
 ; More precisely, if the brr wormhole has not been set up yet, this function
 ; initializes it so that all fields are nil.  If it has been set up and we're
-; not in the brr wormhole, it preserves the BRR-MONITORED-RUNES and nils out
-; the others.  If we are in the brr wormhole then the status has already been
-; set up and brr processing in flight is depending on it, so we do nothing.
+; not in the brr wormhole, it preserves the BRR-MONITORED-RUNES of the
+; top-level brr-status and nils out the others.  If we are in the brr wormhole
+; then the status has already been set up and brr processing in flight is
+; depending on it, so we do nothing.  (If we're in the processing of aborting
+; and we're in the brr wormhole, the wormhole1 cleanup form will handle this.)
 
 ; Before this function is first called, there is no entry for BRR on the
 ; *wormhole-status-alist*.  That means the persistent-whs for brr is NIL.  That
@@ -8854,7 +8853,9 @@ its attachment is ignored during proofs"))))
        'brr
        '(lambda (whs)
           (change brr-status whs
-;                 :brr-monitored-runes is left unchanged!
+                  :brr-monitored-runes (access brr-status
+                                               (top-level-brr-status whs)
+                                               :brr-monitored-runes)
                   :brr-gstack nil
                   :brr-local-alist nil
                   :brr-previous-status nil))
@@ -9249,10 +9250,7 @@ its attachment is ignored during proofs"))))
             nil)))
      (t nil))))
 
-(defun brr-near-missp (msgp lemma target rcnst criteria-alist)
-
-; This function should be replaced by a constrained function to which
-; built-in-brr-near-missp is attached.
+(defproxy brr-near-missp
 
 ; The rewriter has tried to match the pattern in lemma to target under the
 ; restrictions in rcnst.  The match failed.  We determine whether this
@@ -9270,13 +9268,10 @@ its attachment is ignored during proofs"))))
 
 ; (:condition t :depth 3 :abstraction (f 44 (cadr z)))!
 
-  (declare (xargs :guard (and (or (weak-rewrite-rule-p lemma)
-                                  (weak-linear-lemma-p lemma))
-                              (pseudo-termp target)
-                              (weak-rewrite-constant-p rcnst)
-                              (brr-criteria-alistp criteria-alist))))
+  (* * * * *) => *)
 
-  (built-in-brr-near-missp msgp lemma target rcnst criteria-alist))
+(defattach (brr-near-missp built-in-brr-near-missp)
+  :skip-checks t)
 
 (mutual-recursion
 
@@ -13036,7 +13031,7 @@ its attachment is ignored during proofs"))))
   (let ((new-vars (cons 'step-limit vars)))
     `(mv-let ,new-vars
              ,form
-             (declare (type (signed-byte 30) step-limit))
+             (declare (type #.*fixnum-type* step-limit))
              ,@rest)))
 
 #+acl2-par
@@ -13049,7 +13044,7 @@ its attachment is ignored during proofs"))))
   (let ((new-vars (cons 'step-limit vars)))
     `(mv-let@par ,new-vars
                  ,form
-                 (declare (type (signed-byte 30) step-limit))
+                 (declare (type #.*fixnum-type* step-limit))
                  ,@rest)))
 
 (defmacro rewrite-entry-extending-failure (unify-subst failure-reason form
@@ -13066,16 +13061,6 @@ its attachment is ignored during proofs"))))
                            (cons ,unify-subst ,failure-reason))
                           failure-reason-lstxx))
                unify-substxx ttreexx allpxx rw-cache-alist-newxx)))
-
-(defun set-difference-assoc-eq (lst alist)
-  (declare (xargs :guard (and (true-listp lst)
-                              (alistp alist)
-                              (or (symbol-listp lst)
-                                  (symbol-alistp alist)))))
-  (cond ((endp lst) nil)
-        ((assoc-eq (car lst) alist)
-         (set-difference-assoc-eq (cdr lst) alist))
-        (t (cons (car lst) (set-difference-assoc-eq (cdr lst) alist)))))
 
 (defun extend-unify-subst (alist unify-subst)
 
@@ -15397,14 +15382,14 @@ its attachment is ignored during proofs"))))
 ; The first value is the rewritten term.  The second is the final
 ; value of ttree.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((gstack (push-gframe 'rewrite bkptr term alist obj))
          (rdepth (adjust-rdepth rdepth)))
-     (declare (type (unsigned-byte 29) rdepth))
+     (declare (type #.*fixnat-type* rdepth))
      (cond
       ((zero-depthp rdepth)
        (rdepth-error
@@ -15796,7 +15781,7 @@ its attachment is ignored during proofs"))))
                              (fn-rune-nume 'mv-nth nil nil wrld)
                              ttree))
                      (step-limit (1+f step-limit)))
-                 (declare (type (signed-byte 30) step-limit))
+                 (declare (type #.*fixnum-type* step-limit))
                  (if mv-nth-rewritep
                      (rewrite-entry
                       (rewrite mv-nth-result alist 2))
@@ -15999,11 +15984,11 @@ its attachment is ignored during proofs"))))
 ; "The rewriter has been modified to work slightly harder in relieving
 ; hypotheses."
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (mv-let (new-term new-ttree)
            (rewrite-solidify term type-alist obj geneqv
                              (access rewrite-constant rcnst
@@ -16179,11 +16164,11 @@ its attachment is ignored during proofs"))))
 ; Warning: If you modify this function, consider modifying the code below a
 ; comment mentioning rewrite-if in rewrite-with-lemmas.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (mv-let
      (test unrewritten-test left right swapped-p)
      (cond
@@ -16326,12 +16311,12 @@ its attachment is ignored during proofs"))))
 ; is ignored in this function and that deep-pequiv-lst can be the special
 ; value, :none, which is handled by function pequiv-info-for-rewrite.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit)
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit)
            (ignore pequiv-info))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond ((null args)
           (mv step-limit (reverse rewritten-args-rev) ttree))
          (t (mv-let
@@ -16364,11 +16349,11 @@ its attachment is ignored during proofs"))))
                              ttree)
 
   (declare (ignore geneqv pequiv-info obj)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((flambdap fn) (mv step-limit (fcons-term fn args) ttree))
     ((eq fn 'equal)
@@ -16404,8 +16389,8 @@ its attachment is ignored during proofs"))))
 ; superior calls, in order to break loops as explained below.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -16415,7 +16400,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((equal lhs rhs)
      (mv step-limit *t* (puffert ttree)))
@@ -16775,8 +16760,8 @@ its attachment is ignored during proofs"))))
 ; do care that bkptr is a number representing the hypothesis.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -16786,7 +16771,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    6
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond ((ffn-symb-p hyp0 'synp)
           (mv-let (wonp failure-reason unify-subst ttree)
                   (relieve-hyp-synp rune hyp0 unify-subst rdepth type-alist wrld
@@ -17106,11 +17091,11 @@ its attachment is ignored during proofs"))))
 ; elaborate form of failure reporting.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    7
-   (signed-byte 30)
+   #.*fixnum-type*
 
 ; In relieve-hyps1-free-1 we extend unify-subst to new-unify-subst by searching
 ; a type-alist.  Here we perform that extension by taking the first element of
@@ -17208,8 +17193,8 @@ its attachment is ignored during proofs"))))
 ; entries, rather than extending rw-cache-alist.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -17219,7 +17204,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    7
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null hyps)
      (mv step-limit t nil unify-subst ttree allp rw-cache-alist-new))
@@ -17228,7 +17213,7 @@ its attachment is ignored during proofs"))))
       (relieve-hyp-ans failure-reason new-unify-subst new-ttree allp)
       (with-accumulated-persistence
        rune
-       ((the (signed-byte 30) step-limit)
+       ((the #.*fixnum-type* step-limit)
         relieve-hyp-ans failure-reason new-unify-subst new-ttree allp)
 
 ; Even in the "special case" for relieve-hyp, we can mark this as a success
@@ -17390,11 +17375,11 @@ its attachment is ignored during proofs"))))
 ; 'hyp-vars token is used in its place (see relieve-hyps1).
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    7
-   (signed-byte 30)
+   #.*fixnum-type*
    (mv-let
     (ans new-unify-subst new-ttree new-rest-type-alist)
     (search-type-alist+ term typ rest-type-alist unify-subst ttree wrld)
@@ -17496,12 +17481,12 @@ its attachment is ignored during proofs"))))
 ; a resulting allp.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
   (the-mv
    7
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((endp lemmas)
 
@@ -17679,8 +17664,8 @@ its attachment is ignored during proofs"))))
 ; output ttrees.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -17690,7 +17675,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    5
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null hyps)
 
@@ -17822,14 +17807,14 @@ its attachment is ignored during proofs"))))
 ; 'rw-cache-any-tag and 'rw-cache-nil-tag may differ between the input and
 ; output ttrees.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((gstack (push-gframe 'rewrite-with-lemma nil term lemma))
          (rdepth (adjust-rdepth rdepth)))
-     (declare (type (unsigned-byte 29) rdepth))
+     (declare (type #.*fixnat-type* rdepth))
      (cond ((zero-depthp rdepth)
             (rdepth-error
              (mv step-limit nil term ttree)))
@@ -17879,7 +17864,7 @@ its attachment is ignored during proofs"))))
                      (rune (access rewrite-rule lemma :rune)))
                 (with-accumulated-persistence
                  rune
-                 ((the (signed-byte 30) step-limit) flg term ttree)
+                 ((the #.*fixnum-type* step-limit) flg term ttree)
                  flg
                  (mv-let
                   (erp val latches)
@@ -18245,7 +18230,7 @@ its attachment is ignored during proofs"))))
                                           (rewritten-rhs ttree)
                                           (with-accumulated-persistence
                                            rune
-                                           ((the (signed-byte 30) step-limit)
+                                           ((the #.*fixnum-type* step-limit)
                                             rewritten-rhs ttree)
 
 ; This rewrite of the body is considered a success unless the parent with-acc-p
@@ -18341,7 +18326,7 @@ its attachment is ignored during proofs"))))
                          (t
                           (with-accumulated-persistence
                            rune
-                           ((the (signed-byte 30) step-limit) flg term ttree)
+                           ((the #.*fixnum-type* step-limit) flg term ttree)
                            flg
                            (sl-let
                             (relieve-hyps-ans failure-reason unify-subst ttree)
@@ -18373,7 +18358,7 @@ its attachment is ignored during proofs"))))
                                (rewritten-rhs ttree)
                                (with-accumulated-persistence
                                 rune
-                                ((the (signed-byte 30) step-limit)
+                                ((the #.*fixnum-type* step-limit)
                                  rewritten-rhs ttree)
 
 ; This rewrite of the body is considered a success unless the parent with-acc-p
@@ -18433,11 +18418,11 @@ its attachment is ignored during proofs"))))
 ; 'rw-cache-any-tag and 'rw-cache-nil-tag may differ between the input and
 ; output ttrees.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond ((null lemmas) (mv step-limit nil term ttree))
 
 ; When we are doing non-linear we will be rewriting linear terms
@@ -18489,11 +18474,11 @@ its attachment is ignored during proofs"))))
 ; it only for recursive fns simply because the non-recursive case seems
 ; unlikely.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (let* ((fn (ffn-symb term))
           (args (fargs term))
           (body (if (null rule)
@@ -18590,7 +18575,7 @@ its attachment is ignored during proofs"))))
                                     state)))
                  (with-accumulated-persistence
                   (access rewrite-rule rule :rune)
-                  ((the (signed-byte 30) step-limit) term-out ttree)
+                  ((the #.*fixnum-type* step-limit) term-out ttree)
 
 ; The following mis-guarded use of eq instead of equal implies that we could be
 ; over-counting successes at the expense of failures.
@@ -18651,7 +18636,7 @@ its attachment is ignored during proofs"))))
                       (relieve-hyps-ans
                        (with-accumulated-persistence
                         rune
-                        ((the (signed-byte 30) step-limit) term-out ttree)
+                        ((the #.*fixnum-type* step-limit) term-out ttree)
                         t ; considered a success unless the parent with-acc-p fails
                         (sl-let
                          (rewritten-body new-ttree1)
@@ -18871,11 +18856,11 @@ its attachment is ignored during proofs"))))
                             type-alist obj geneqv pequiv-info wrld state fnstack
                             ancestors backchain-limit
                             simplify-clause-pot-lst rcnst gstack ttree)
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((variablep term)
      (rewrite-entry (rewrite-solidify-plus term)))
@@ -18923,7 +18908,7 @@ its attachment is ignored during proofs"))))
 
                   (with-accumulated-persistence
                    rune
-                   ((the (signed-byte 30) step-limit) new-term ttree)
+                   ((the #.*fixnum-type* step-limit) new-term ttree)
                    t
                    (sl-let
                     (rewritten-test ttree)
@@ -19014,7 +18999,7 @@ its attachment is ignored during proofs"))))
                  (new-term
                   (with-accumulated-persistence
                    rune
-                   ((the (signed-byte 30) step-limit) new-term ttree)
+                   ((the #.*fixnum-type* step-limit) new-term ttree)
                    t
                    (sl-let (final-term ttree)
                            (rewrite-entry (rewrite new-term alist 'expansion)
@@ -19069,8 +19054,8 @@ its attachment is ignored during proofs"))))
 ; We return two things, the rewritten term and the new ttree.
 
   (declare (ignore obj geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19080,7 +19065,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (mv-let
     (not-flg atm)
     (strip-not term)
@@ -19144,8 +19129,8 @@ its attachment is ignored during proofs"))))
 ; terms and their ttrees.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19155,7 +19140,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (if (null term-lst)
        (mv step-limit nil nil)
      (sl-let
@@ -19207,8 +19192,8 @@ its attachment is ignored during proofs"))))
 ; loop-stopper-value which exceeds *max-linear-pot-loop-stopper-value*.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19218,7 +19203,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((gstack (push-gframe 'add-linear-lemma nil term lemma))
          (rdepth (adjust-rdepth rdepth)))
      (mv-let
@@ -19234,7 +19219,7 @@ its attachment is ignored during proofs"))))
         (let ((rune (access linear-lemma lemma :rune)))
           (with-accumulated-persistence
            rune
-           ((the (signed-byte 30) step-limit) contradictionp pot-lst)
+           ((the #.*fixnum-type* step-limit) contradictionp pot-lst)
            (or contradictionp
 
 ; The following mis-guarded use of eq instead of equal implies that we could be
@@ -19265,7 +19250,7 @@ its attachment is ignored during proofs"))))
                (rewritten-concl ttree2)
                (with-accumulated-persistence
                 rune
-                ((the (signed-byte 30) step-limit) rewritten-concl ttree2)
+                ((the #.*fixnum-type* step-limit) rewritten-concl ttree2)
                 t ; considered a success unless the parent with-acc-p fails
                 (rewrite-entry
                  (rewrite-linear-term
@@ -19526,8 +19511,8 @@ its attachment is ignored during proofs"))))
 ; The second is the possibly new pot-lst.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19537,7 +19522,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null linear-lemmas)
      (mv step-limit nil simplify-clause-pot-lst))
@@ -19584,8 +19569,8 @@ its attachment is ignored during proofs"))))
 ; (term . coeff).
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19595,7 +19580,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (let* ((leaves1 (binary-*-leaves (car alist-entry1)))
           (leaves2 (binary-*-leaves (car alist-entry2)))
           (leaves (merge-arith-term-order leaves1 leaves2))
@@ -19644,8 +19629,8 @@ its attachment is ignored during proofs"))))
 ; alist2 and adding the result to poly.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19655,7 +19640,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null alist2)
      (mv step-limit poly))
@@ -19699,8 +19684,8 @@ its attachment is ignored during proofs"))))
 ; alist1 multiplying each entry by alist2 and adding the result to poly.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19710,7 +19695,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null alist1)
      (mv step-limit poly))
@@ -19755,8 +19740,8 @@ its attachment is ignored during proofs"))))
 ; into the growing alist.  We finish with multiply-alists.
 
   (declare (ignore obj geneqv pequiv-info ttree rel1 rel2)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19889,7 +19874,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (let* ((temp-poly1
            (if (eql const2 0)
                poly
@@ -19921,8 +19906,8 @@ its attachment is ignored during proofs"))))
 ; We assume that either poly1 or poly2 is rational-poly-p.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19932,7 +19917,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((alist1 (access poly poly1 :alist))
          (ttree1 (access poly poly1 :ttree))
          (const1 (access poly poly1 :constant))
@@ -19980,8 +19965,8 @@ its attachment is ignored during proofs"))))
 ; We return a list of polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -19991,7 +19976,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null big-poly-list)
      (mv step-limit new-poly-list))
@@ -20039,8 +20024,8 @@ its attachment is ignored during proofs"))))
 ; We return a list of polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20050,7 +20035,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null poly-list)
      (mv step-limit new-poly-list))
@@ -20085,8 +20070,8 @@ its attachment is ignored during proofs"))))
 ; We return a list of polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20096,7 +20081,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null var-list)
      (mv step-limit nil))
@@ -20140,8 +20125,8 @@ its attachment is ignored during proofs"))))
 ; We return a list of polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20151,7 +20136,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (sl-let
     (poly-list1)
     (rewrite-entry
@@ -20194,8 +20179,8 @@ its attachment is ignored during proofs"))))
 ; We return a list of polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20205,7 +20190,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    2
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null var-list) ; How can we multiply 0 things?
      (mv step-limit nil))
@@ -20242,8 +20227,8 @@ its attachment is ignored during proofs"))))
 ; corresponding to the pots labeled by the vars in var-list.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20253,7 +20238,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((product-already-triedp var-list products-already-tried)
      (mv step-limit nil simplify-clause-pot-lst products-already-tried))
@@ -20324,8 +20309,8 @@ its attachment is ignored during proofs"))))
 ; from which we get our polys.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20335,7 +20320,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null (cdr var-list))
      (mv step-limit nil simplify-clause-pot-lst products-already-tried))
@@ -20422,8 +20407,8 @@ its attachment is ignored during proofs"))))
 ; tried.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20433,7 +20418,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((equal part-of-new-var *1*)
      (if (null (cdr var-list))
@@ -20529,8 +20514,8 @@ its attachment is ignored during proofs"))))
 ; tried.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20540,7 +20525,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((eq (fn-symb new-var) 'BINARY-*)
      (rewrite-entry
@@ -20583,8 +20568,8 @@ its attachment is ignored during proofs"))))
 ; tried.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20594,7 +20579,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null pot-lst-to-step-down)
      (mv step-limit nil simplify-clause-pot-lst products-already-tried))
@@ -20701,8 +20686,8 @@ its attachment is ignored during proofs"))))
 ; tried.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20712,7 +20697,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond ((null pot-lst-to-step-down)
           (mv step-limit nil simplify-clause-pot-lst products-already-tried))
          (t
@@ -20779,8 +20764,8 @@ its attachment is ignored during proofs"))))
 ; comments and documentation there.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20790,7 +20775,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null new-vars)
      (mv step-limit nil simplify-clause-pot-lst))
@@ -20909,8 +20894,8 @@ its attachment is ignored during proofs"))))
 ; we have already tried multiplying the polys from.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20920,14 +20905,14 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null new-vars)
      (mv step-limit nil simplify-clause-pot-lst))
     (t
      (let ((gstack (push-gframe 'non-linear-arithmetic nil new-vars))
            (rdepth (adjust-rdepth rdepth)))
-       (declare (type (unsigned-byte 29) rdepth))
+       (declare (type #.*fixnat-type* rdepth))
        (rewrite-entry
         (non-linear-arithmetic1 new-vars pot-lst products-already-tried)
         :obj    nil      ; ignored
@@ -20957,8 +20942,8 @@ its attachment is ignored during proofs"))))
 ; division).
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -20968,7 +20953,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null new-vars)
      (let ((new-vars (expanded-new-vars-in-pot-lst simplify-clause-pot-lst
@@ -21060,8 +21045,8 @@ its attachment is ignored during proofs"))))
 ; non-linear arithmetic.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21071,7 +21056,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((<= *non-linear-rounds-value* cnt)
      (mv step-limit nil simplify-clause-pot-lst))
@@ -21166,8 +21151,8 @@ its attachment is ignored during proofs"))))
 ; We return the standard contradictionp and a new pot-lst.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21177,7 +21162,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null new-vars)
      (let ((new-vars (new-vars-in-pot-lst simplify-clause-pot-lst
@@ -21231,8 +21216,8 @@ its attachment is ignored during proofs"))))
 ; is that you get to think of better names for everything!
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21242,7 +21227,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (mv-let
     (contradictionp new-pot-lst)
     (add-polys lst simplify-clause-pot-lst
@@ -21354,8 +21339,8 @@ its attachment is ignored during proofs"))))
 ; being able to use cons to generate a unique object.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21365,7 +21350,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (sl-let
     (contradictionp new-pot-lst1)
     (rewrite-entry
@@ -21551,8 +21536,8 @@ its attachment is ignored during proofs"))))
 ; that it survived all those years in Nqthm without coming to our attention.
 
   (declare (ignore obj geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21562,7 +21547,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null split-lst)
      (let ((eqp (equal pot-lst0 simplify-clause-pot-lst)))
@@ -21645,8 +21630,8 @@ its attachment is ignored during proofs"))))
 ; source documentation (see books/system/doc/acl2-doc.lisp).
 
   (declare (ignore geneqv pequiv-info ttree)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21656,10 +21641,10 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((gstack (push-gframe 'add-terms-and-lemmas nil term-lst obj))
          (rdepth (adjust-rdepth rdepth)))
-     (declare (type (unsigned-byte 29) rdepth))
+     (declare (type #.*fixnat-type* rdepth))
      (sl-let
       (term-lst ttree-lst)
       (if (and (access rewrite-constant rcnst :nonlinearp)
@@ -21805,8 +21790,8 @@ its attachment is ignored during proofs"))))
 ;   hints.
 
   (declare (ignore geneqv pequiv-info)
-           (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+           (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
 
 ; Convention: It is our convention to pass nils into ignored &extra formals.
 ; Do not change the (ignore ...) declaration above without looking at the
@@ -21816,7 +21801,7 @@ its attachment is ignored during proofs"))))
 
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (let ((positivep (eq obj nil)))
      (cond
       ((and (not (eq obj '?))
@@ -21884,17 +21869,17 @@ its attachment is ignored during proofs"))))
 ; 'rw-cache-any-tag and 'rw-cache-nil-tag may differ between the input and
 ; output ttrees.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (let* ((gstack (push-gframe 'rewrite-quoted-constant-with-lemma nil term lemma))
           (rdepth (adjust-rdepth rdepth))
           (temp (access rewrite-rule lemma :heuristic-info))
           (n (car temp))
           (loop-stopper (cdr temp)))
-     (declare (type (unsigned-byte 29) rdepth)
+     (declare (type #.*fixnat-type* rdepth)
               (type integer n))
      (cond ((zero-depthp rdepth)
             (rdepth-error
@@ -21954,7 +21939,7 @@ its attachment is ignored during proofs"))))
                    (t
                     (with-accumulated-persistence
                      rune
-                     ((the (signed-byte 30) step-limit) flg term ttree)
+                     ((the #.*fixnum-type* step-limit) flg term ttree)
                      flg
                      (sl-let
                       (relieve-hyps-ans failure-reason unify-subst ttree)
@@ -21986,7 +21971,7 @@ its attachment is ignored during proofs"))))
                          (rewritten-rhs ttree)
                          (with-accumulated-persistence
                           rune
-                          ((the (signed-byte 30) step-limit)
+                          ((the #.*fixnum-type* step-limit)
                            rewritten-rhs ttree)
 
 ; This rewrite of the body is considered a success unless the parent with-acc-p
@@ -22048,11 +22033,11 @@ its attachment is ignored during proofs"))))
         fnstack ancestors backchain-limit
         simplify-clause-pot-lst rcnst gstack ttree)
 ; Term is a quoted evg.
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit))
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit))
   (the-mv
    4
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond
     ((null lemmas) (mv step-limit nil term ttree))
     ((not (enabled-numep
@@ -22183,14 +22168,14 @@ its attachment is ignored during proofs"))))
 ; see why a more sophisticated solution is needed.  But as a first cut we just
 ; don't open recursive functions in lambda bodies.
 
-  (declare (type (unsigned-byte 29) rdepth)
-           (type (signed-byte 30) step-limit)
+  (declare (type #.*fixnat-type* rdepth)
+           (type #.*fixnum-type* step-limit)
            (ignore obj geneqv pequiv-info
                    ancestors simplify-clause-pot-lst))
 
   (the-mv
    3
-   (signed-byte 30)
+   #.*fixnum-type*
    (cond ((or (symbolp evg)
 
 ; We don't mess with evg if it is a symbol.  If we did, it would fail the first

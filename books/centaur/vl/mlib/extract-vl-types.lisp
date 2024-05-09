@@ -320,7 +320,7 @@
                      '(equal (vl-value-kind x.val) :vl-constint))
               nil))
 
-         
+
          (value (vl-constint->value x.val))
          ((vl-enumitem cur) (car items))
          ((unless (equal cur.range nil))
@@ -359,7 +359,7 @@
                 ((Unless close-bracket-i)
                  (raise "Could not find close bracket for args: ~s0~%" args))
                 (num (explode (subseq args 1 close-bracket-i)))
-                ((unless (str::dec-digit-char-listp num))
+                ((unless (str::dec-digit-char-list*p num))
                  (raise "Invalid sequence of indices are given: ~p0. There needs to be a positive integer between brackets.~%" args))
 
                 ((mv num & &) (Str::parse-nat-from-charlist num 0 0))
@@ -494,6 +494,7 @@
                                       )
          :measure (acl2::nat-list-measure (list (len dims) measure-cnt))
          :no-function t
+         :normalize nil
          (declare (ignorable measure-cnt))
          (cond ((atom dims)
                 (b* ((result ,(if debug-fn-name `(,debug-fn-name value excludes depth-limit) 'value))
@@ -527,6 +528,7 @@
                                            (trace stringp))
          :measure (acl2::nat-list-measure (list (len dims) cnt))
          :no-function t
+         :normalize nil
          (if (zp cnt)
              nil
            (b* ((cnt (1- cnt))
@@ -753,6 +755,7 @@
                                                           (true-listp excludes)))
                                            (depth-limit integerp))
                      :parents nil
+                     :normalize nil
                      ;;:short ,(str::cat "Debug aux function for  @(see " name ") VL coretype. Not intended to be called by users.")
                      (declare (ignorable excludes depth-limit))
                      (b* ((value (sv::4vec-part-select 0 ,size value)))
@@ -777,6 +780,16 @@
                      (b* ((excludes (vl-types->acl2-types-parse-args-list exclude ',pkg-sym)))
                        (list ',debug-fn-name value (list 'quote excludes)
                              depth-limit)))
+
+                   (table extracted-vl-types ',symbol
+                          '((:type :vl-coretype)
+                            (:accessor-macro-name ,accessor-macro-name)
+                            (:changer-macro-name ,changer-macro-name)
+                            (:ranges-fn-name ,ranges-fn-name)
+                            (:debug-macro-name ,debug-macro-name)
+                            (:debug-fn-name ,debug-fn-name)
+                            (:debug-vector-fn-name ,debug-vector-fn-name)))
+
                    ;;  )
                    ))))
            (mv events size)))
@@ -820,6 +833,7 @@
                                                           (true-listp excludes)))
                                            (depth-limit integerp))
                      :parents nil
+                     :normalize nil
                      ;;:short ,(str::cat "Debug aux function for  @(see |" name "|) VL struct type. Not intended to be called by users.")
                      (declare (ignorable excludes))
                      (cond ((< depth-limit 1)
@@ -843,6 +857,16 @@
                      (b* ((excludes (vl-types->acl2-types-parse-args-list exclude ',pkg-sym)))
                        (list ',debug-fn-name value (list 'quote excludes) depth-limit)))
                    ;;)
+
+                   (table extracted-vl-types ',symbol
+                          '((:type :vl-struct)
+                            (:accessor-macro-name ,accessor-macro-name)
+                            (:changer-macro-name ,changer-macro-name)
+                            (:ranges-fn-name ,ranges-fn-name)
+                            (:debug-macro-name ,debug-macro-name)
+                            (:debug-fn-name ,debug-fn-name)
+                            (:debug-vector-fn-name ,debug-vector-fn-name)
+                            ))
 
                    ))))
            (mv (append member-events this-events) size)))
@@ -887,6 +911,7 @@
                                                           (true-listp excludes)))
                                            (depth-limit integerp))
                      :parents nil
+                     :normalize nil
                      (declare (ignorable excludes))
                      (cond ((< depth-limit 1)
                             (list :value value
@@ -908,6 +933,17 @@
                      (b* ((excludes (vl-types->acl2-types-parse-args-list exclude ',pkg-sym)))
                        (list ',debug-fn-name value (list 'quote excludes) depth-limit)))
                    ;;)
+
+                   (table extracted-vl-types ',symbol
+                          '((:type :vl-union)
+                            (:accessor-macro-name ,accessor-macro-name)
+                            (:changer-macro-name ,changer-macro-name)
+                            (:ranges-fn-name ,ranges-fn-name)
+                            (:debug-macro-name ,debug-macro-name)
+                            (:debug-fn-name ,debug-fn-name)
+                            (:debug-vector-fn-name ,debug-vector-fn-name)
+                            ))
+
                    ))))
            (mv (append member-events this-events) size)))
         (:vl-enum
@@ -954,7 +990,7 @@
                                          )))
                            ((sv::4vec-p value)
                             value)
-                           (t 
+                           (t
                             (case-match value
                               ,@string-to-int-cases
                               (& (progn$ (cw "Invalid enum type given: ~s0 ~%" value)
@@ -967,6 +1003,7 @@
                                            (depth-limit integerp))
                      (declare (ignorable excludes depth-limit))
                      :parents nil
+                     :normalize nil
                      (list :value value
                            :string
                            (,accessor-macro-name value)))
@@ -976,7 +1013,18 @@
                                                                       pkg-sym)
 
                    (defmacro ,debug-macro-name (value &key (depth-limit '1000))
-                     (list ',debug-fn-name value nil depth-limit))))))
+                     (list ',debug-fn-name value nil depth-limit))
+
+
+                   (table extracted-vl-types ',symbol
+                          '((:type :vl-enum)
+                            (:accessor-macro-name ,accessor-macro-name)
+                            (:ranges-fn-name ,ranges-fn-name)
+                            (:debug-macro-name ,debug-macro-name)
+                            (:debug-fn-name ,debug-fn-name)
+                            (:debug-vector-fn-name ,debug-vector-fn-name)
+                            ))
+                   ))))
            (mv this-events size)))
 
         (:vl-usertype
@@ -1012,6 +1060,7 @@
                                                          (true-listp excludes)))
                                           (depth-limit integerp))
                     :parents nil
+                    :normalize nil
                     (declare (ignorable excludes))
                     ,debug-clause)
 
@@ -1026,6 +1075,17 @@
                                                ,@(and constant-value `((value ',constant-value))))
                     (b* ((excludes (vl-types->acl2-types-parse-args-list exclude ',pkg-sym)))
                       (list ',debug-fn-name value (list 'quote excludes) depth-limit)))
+
+                  (table extracted-vl-types ',symbol
+                         '((:type :vl-usertype)
+                           (:constant-value ,constant-value)
+                           (:accessor-macro-name ,accessor-macro-name)
+                           (:changer-macro-name ,changer-macro-name)
+                           (:ranges-fn-name ,ranges-fn-name)
+                           (:debug-macro-name ,debug-macro-name)
+                           (:debug-fn-name ,debug-fn-name)
+                           (:debug-vector-fn-name ,debug-vector-fn-name)
+                           ))
                   ;;)
                   ))))
            (mv (append member-events
@@ -1159,7 +1219,7 @@ nil
                    (mv (change-vl-location loc :col 0) nil)))
                 (t (mv (raise "Unexpected vl-type for x: ~p0" x) nil))))
 
-         
+
          ((mv okp result & state) (vl-read-file (vl-location->filename minloc)))
          ((unless okp)
           (progn$ (cw "Couldn't read file ~p0 for ~p1 ~%"
@@ -1184,7 +1244,7 @@ nil
                                                   :col 0)))))
                    (subseq string start (min (length string) end))))))
 
-         
+
 
          ;; insert xdoc hyperlinks to quickly navigate children types.
          (string (extract-vl-types-insert-xdoc-links string all-vl-type-names))
@@ -1410,6 +1470,7 @@ nil
        (names-to-extract (throw-away-keyword-parts args)))
 
     `(encapsulate nil
+       (local (include-book "std/lists/len" :dir :system))
        (with-output
          :off :all
          :on (comment error)

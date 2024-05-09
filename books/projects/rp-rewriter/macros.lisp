@@ -490,14 +490,14 @@ preserve-current-theory) </p>
   :autodoc nil
   :short "Creates a function and a macro to replace case-match, and prevent
   excessive casesplitting when proving lemmas."
-  
-  (define create-case-match-macro-fn (name pattern extra-cond)
+  :parents (rp-utilities)
+  (define create-case-match-macro-fn (name pattern extra-cond inline)
     :mode :program
     (acl2::template-subst
      `(progn
         (define <name>-p (x)
           :ignore-ok t
-          :inline t
+          :inline ,inline
           (case-match x
             (<pattern> ,extra-cond))
           ///
@@ -514,5 +514,42 @@ preserve-current-theory) </p>
      :str-alist `(("<NAME>" . ,(symbol-name name)))
      :pkg-sym name))
 
-  (defmacro create-case-match-macro (name pattern &optional (extra-cond ''t))
-    (create-case-match-macro-fn name pattern extra-cond)))
+  (defmacro create-case-match-macro (name pattern &key
+                                          (extra-cond 't)
+                                          (inline 't))
+    (create-case-match-macro-fn name pattern extra-cond inline)))
+
+
+
+
+;; USEFUL MACROS FOR CASESPLIT PROBLEMS.
+
+
+(defmacro and*-exec (&rest args)
+  `(mbe :exec (and ,@args)
+        :logic (and* ,@args)))
+
+(defmacro or*-exec (&rest args)
+  `(mbe :exec (or ,@args)
+        :logic (or ,@args)))
+
+(define case-match*-aux (cases)
+  (if (atom cases)
+      nil
+    (cons (let* ((x (car cases)))
+            (case-match x
+              ((('and . cases) . run)
+               `((and*-exec . ,cases) . ,run))
+              (& x)))
+          (case-match*-aux (cdr cases)))))
+  
+(defmacro case-match*  (&rest args)
+  (declare (xargs :guard (and (consp args)
+                              (symbolp (car args))
+                              (alistp (cdr args))
+                              (null (cdr (member-equal (assoc-eq '& (cdr args))
+                                                       (cdr args)))))))
+  (b* ((cases (acl2::match-clause-list (car args)
+                                       (cdr args)))
+       (cases (case-match*-aux cases)))
+    (cons 'cond cases)))

@@ -1,5 +1,5 @@
 ; ACL2 Version 8.5 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2023, Regents of the University of Texas
+; Copyright (C) 2024, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -5505,19 +5505,21 @@
         name
         (car dests)
         (set-difference-eq vars (fargs (car dests)))))
-   ((getpropc (ffn-symb (car dests)) 'eliminate-destructors-rule nil wrld)
-    (er soft ctx
-        "~x0 is an unacceptable destructor elimination rule because we ~
-         already have a destructor elimination rule for ~x1, namely ~x2, and ~
-         we do not support more than one elimination rule for the same ~
-         function symbol."
-        name
-        (ffn-symb (car dests))
-        (base-symbol (access elim-rule
-                             (getpropc (ffn-symb (car dests))
-                                       'eliminate-destructors-rule nil wrld)
-                             :rune))))
-   (t (chk-acceptable-elim-rule1 name vars (cdr dests) ctx wrld state))))
+   (t
+    (pprogn
+     (let ((rule (most-recent-enabled-elim-rule (ffn-symb (car dests)) wrld
+                                                (ens state))))
+       (cond
+        (rule (warning$ ctx "Elim-rule"
+                        "There is already an enabled destructor elimination ~
+                         rule for ~x0, namely ~x1.  Unless the new rule ~x2 ~
+                         is disabled, it will replace ~x1 as the destructor ~
+                         elimination rule to be used for ~x0."
+                        (ffn-symb (car dests))
+                        (base-symbol (access elim-rule rule :rune))
+                        name))
+        (t state)))
+     (chk-acceptable-elim-rule1 name vars (cdr dests) ctx wrld state)))))
 
 (defun chk-acceptable-elim-rule (name term ctx wrld state)
   (let ((lst (unprettyify term)))
@@ -5580,24 +5582,30 @@
 ; have not yet added a rule.  For each destructor in lst we add an elim
 ; rule to wrld.
 
-  (cond ((null lst) wrld)
-        (t (let* ((dest (car lst))
-                  (rule (make elim-rule
-                              :rune rune
-                              :nume nume
-                              :hyps hyps
-                              :equiv equiv
-                              :lhs lhs
-                              :rhs rhs
-                              :crucial-position
-                              (- (length (fargs dest))
-                                 (length (member-eq rhs (fargs dest))))
-                              :destructor-term dest
-                              :destructor-terms dests)))
-             (add-elim-rule1 rune nume hyps equiv lhs rhs (cdr lst) dests
-                             (putprop (ffn-symb dest)
-                                      'eliminate-destructors-rule
-                                      rule wrld))))))
+  (cond
+   ((null lst) wrld)
+   (t (let* ((dest (car lst))
+             (rule (make elim-rule
+                         :rune rune
+                         :nume nume
+                         :hyps hyps
+                         :equiv equiv
+                         :lhs lhs
+                         :rhs rhs
+                         :crucial-position
+                         (- (length (fargs dest))
+                            (length (member-eq rhs (fargs dest))))
+                         :destructor-term dest
+                         :destructor-terms dests)))
+        (add-elim-rule1 rune nume hyps equiv lhs rhs (cdr lst) dests
+                        (putprop (ffn-symb dest)
+                                 'eliminate-destructors-rules
+                                 (cons rule
+                                       (getpropc (ffn-symb dest)
+                                                 'eliminate-destructors-rules
+                                                 nil
+                                                 wrld))
+                                 wrld))))))
 
 (defun add-elim-rule (rune nume term wrld)
   (let* ((lst (unprettyify term))
@@ -7949,8 +7957,7 @@
          true-list and ~x0 is not."
         instructions)))
 
-(defun translate-instructions (name instructions ctx wrld state)
-  (declare (ignore name wrld))
+(defun translate-instructions (instructions ctx state)
   (if (eq instructions t)
       (value t)
     (er-progn (chk-primitive-instruction-listp instructions ctx state)
@@ -8947,9 +8954,7 @@
                      (er-let* ((instrs (if assumep
                                            (value nil)
                                          (translate-instructions
-                                          (cons "Corollary of " name)
-                                          (cadr alist)
-                                          ctx wrld state))))
+                                          (cadr alist) ctx state))))
                        (value instrs)))))
                   (:OTF-FLG
                    (value (cadr alist)))
@@ -10568,35 +10573,39 @@
                 (info-for-linear-lemmas (cdr rules) numes ens wrld))
         (info-for-linear-lemmas (cdr rules) numes ens wrld)))))
 
-(defun info-for-eliminate-destructors-rule (rule numes ens wrld)
-  (let ((rune             (access elim-rule rule :rune))
-        (nume             (access elim-rule rule :nume))
-        (hyps             (access elim-rule rule :hyps))
-        (equiv            (access elim-rule rule :equiv))
-        (lhs              (access elim-rule rule :lhs))
-        (rhs              (access elim-rule rule :rhs))
-        (destructor-term  (access elim-rule rule :destructor-term))
-        (destructor-terms (access elim-rule rule :destructor-terms))
-        (crucial-position (access elim-rule rule :crucial-position)))
-    (if (or (eq numes t)
-            (member nume numes))
-        (list (list (list :rune rune
-                          :elim nume)
-                    (list :enabled          (and (enabled-runep rune ens wrld) t))
-                    (list :hyps             (untranslate-hyps hyps wrld)
-                          hyps)
-                    (list :equiv            equiv)
-                    (list :lhs              (untranslate lhs nil wrld)
-                          lhs)
-                    (list :rhs              (untranslate rhs nil wrld)
-                          rhs)
-                    (list :destructor-term  (untranslate destructor-term nil wrld)
-                          destructor-term)
-                    (list :destructor-terms (untranslate-lst destructor-terms nil
-                                                             wrld)
-                          destructor-terms)
-                    (list :crucial-position crucial-position)))
-      nil)))
+(defun info-for-eliminate-destructors-rules (rules numes ens wrld)
+  (if (null rules)
+      nil
+    (let* ((rule             (car rules))
+           (rune             (access elim-rule rule :rune))
+           (nume             (access elim-rule rule :nume))
+           (hyps             (access elim-rule rule :hyps))
+           (equiv            (access elim-rule rule :equiv))
+           (lhs              (access elim-rule rule :lhs))
+           (rhs              (access elim-rule rule :rhs))
+           (destructor-term  (access elim-rule rule :destructor-term))
+           (destructor-terms (access elim-rule rule :destructor-terms))
+           (crucial-position (access elim-rule rule :crucial-position)))
+      (if (or (eq numes t)
+              (member nume numes))
+          (cons (list (list :rune rune
+                            :elim nume)
+                      (list :enabled          (and (enabled-runep rune ens wrld) t))
+                      (list :hyps             (untranslate-hyps hyps wrld)
+                            hyps)
+                      (list :equiv            equiv)
+                      (list :lhs              (untranslate lhs nil wrld)
+                            lhs)
+                      (list :rhs              (untranslate rhs nil wrld)
+                            rhs)
+                      (list :destructor-term  (untranslate destructor-term nil wrld)
+                            destructor-term)
+                      (list :destructor-terms (untranslate-lst destructor-terms nil
+                                                               wrld)
+                            destructor-terms)
+                      (list :crucial-position crucial-position))
+                (info-for-eliminate-destructors-rules (cdr rules) numes ens wrld))
+        (info-for-eliminate-destructors-rules (cdr rules) numes ens wrld)))))
 
 (defun info-for-congruences (val numes ens wrld)
 
@@ -10701,7 +10710,7 @@
                       (list :enabled   (and (enabled-runep rune ens wrld) t))
                       (list :pattern   (untranslate pattern nil wrld)
                             pattern)
-                      (list :condition (untranslate condition t wrld)
+                      (list :condition (untranslate (conjoin condition) t wrld)
                             condition)
                       (list :scheme    (untranslate scheme nil wrld)
                             scheme))
@@ -10773,8 +10782,8 @@
        (info-for-lemmas val numes ens wrld))
       (linear-lemmas
        (info-for-linear-lemmas val numes ens wrld))
-      (eliminate-destructors-rule
-       (info-for-eliminate-destructors-rule val numes ens wrld))
+      (eliminate-destructors-rules
+       (info-for-eliminate-destructors-rules val numes ens wrld))
       (congruences
        (info-for-congruences val numes ens wrld))
       (pequivs
@@ -10959,7 +10968,7 @@
 (defun disabledp-fn-lst (runic-mapping-pairs ens)
   (declare (xargs :guard ; see guard on enabled-runep
                   (and (enabled-structure-p ens)
-                       (nat-alistp runic-mapping-pairs))))
+                       (fixnat-alistp runic-mapping-pairs))))
   (cond ((endp runic-mapping-pairs) nil)
         ((enabled-numep (caar runic-mapping-pairs) ens)
          (disabledp-fn-lst (cdr runic-mapping-pairs) ens))
@@ -10981,7 +10990,7 @@
                                   (cond ((and (not (eq name2 :here))
                                               name2
                                               (logical-namep name2 wrld))
-                                         (nat-alistp
+                                         (fixnat-alistp
                                           (getpropc name2 'runic-mapping-pairs
                                                     nil wrld)))
                                         (t t))))
@@ -10991,7 +11000,7 @@
                                        (let ((rune (translate-abbrev-rune
                                                      name
                                                      (macro-aliases wrld))))
-                                         (nat-alistp
+                                         (fixnat-alistp
                                           (getpropc (base-symbol rune)
                                                     'runic-mapping-pairs
                                                     nil
@@ -11143,16 +11152,11 @@
 (defun monitorable-runes-from-mapping-pairs (sym wrld)
 
 ; Note: another function that deals in runic mapping pairs is
-; convert-theory-to-unordered-mapping-pairs1.  In both cases we are guided by
-; the discussion of runic designators in :doc theories.  However, here we do
-; not include :induction runes, and we do not accommodate theories because we
-; wonder what complexity that might introduce in providing useful errors and
-; warnings from :monitor, and we don't (yet?)  consider it likely that users
-; will want to monitor theories.
+; convert-theory-to-unordered-mapping-pairs1.
 
-; We accumulate runic mapping pairs of sym into ans, except in the case that
-; sym is a defined function, we only include the :definition rune and, if indp
-; is true, the induction rune.
+; Sym is runic designator, like a function or theorem name or a macro name
+; mapped to a function name by macro-aliases.  We collect the monitorable runes
+; associated with sym.
 
   (let ((temp (strip-cdrs
                (getpropc (deref-macro-name sym (macro-aliases wrld))
@@ -11219,17 +11223,6 @@
         ((assoc-equal (car lst) alist)
          (set-difference-assoc-equal (cdr lst) alist))
         (t (cons (car lst) (set-difference-assoc-equal (cdr lst) alist)))))
-
-(defun monitorable-runes-from-mapping-pairs (sym wrld)
-
-; Sym is runic designator, like a function or theorem name or a macro name
-; mapped to a function name by macro-aliases.  We collect the monitorable runes
-; associated with sym.
-
-  (let ((temp (strip-cdrs
-               (getpropc (deref-macro-name sym (macro-aliases wrld))
-                         'runic-mapping-pairs nil wrld))))
-    (monitorable-runes temp)))
 
 (defun merge-new-and-old-monitors (new-lst old-lst)
 
@@ -11305,7 +11298,7 @@
                keyword-value-listp with no duplicate keys and ~x0 is not!"
               args))))))
 
-(defun monitor-fn (x args quietp state)
+(defun monitor-fn (x args ctx quietp state)
 
 ; Expects and ensures Wormhole Coherence
 
@@ -11322,7 +11315,7 @@
 ; and we return (value t).  If quietp is nil, we print the new current value of
 ; brr-monitored-runes to the comment window and return (value :invisible)
 
-  (er-let* ((new-pairs (translate-rune-and-criteria x args quietp state)))
+  (er-let* ((new-pairs (translate-rune-and-criteria x args ctx state)))
     (progn$
      (semi-initialize-brr-wormhole state)
      (progn$
@@ -11339,7 +11332,7 @@
             (prog2$
              (and (not quietp)
 ; Note: we are not using (brr-evisc-tuple state) here.  This is
-; a deliberate but undebated choice! 
+; a deliberate but undebated choice!
                   (cw "~Y01~|" new-brr-monitored-runes nil))
              (change brr-status whs
                      :brr-monitored-runes new-brr-monitored-runes))))
@@ -11443,7 +11436,7 @@
                                                        brr-reminder-flg)))
                   (prog2$
 ; Note: we are not using (brr-evisc-tuple state) here.  This is
-; a deliberate but undebated choice! 
+; a deliberate but undebated choice!
                    (cw "~Y01~|" new-brr-monitored-runes nil)
                    (change brr-status whs
                            :brr-monitored-runes new-brr-monitored-runes))))
@@ -11461,7 +11454,7 @@
      '(lambda (whs)
         (prog2$
 ; Note: we are not using (brr-evisc-tuple state) here.  This is
-; a deliberate but undebated choice! 
+; a deliberate but undebated choice!
          (cw "~Y01~|" (access brr-status whs :brr-monitored-runes) nil)
          whs))
      nil)
@@ -11543,7 +11536,7 @@
                             :brr-gstack))))
 
 (defmacro monitor (x expr &optional quietp)
-  `(monitor-fn ,x ,expr ,quietp state))
+  `(monitor-fn ,x ,expr 'monitor ,quietp state))
 
 (defmacro unmonitor (rune)
   `(unmonitor-fn ,rune 'unmonitor state))
@@ -12074,8 +12067,8 @@
                                              'include-book-with-locals)
                                          (eq ld-skip-proofsp 'initialize-acl2))
                                      (value nil)
-                                   (translate-instructions name instructions
-                                                           ctx wrld1 state)))
+                                   (translate-instructions instructions ctx
+                                                           state)))
 
 ; Observe that we do not translate the hints if ld-skip-proofsp is non-nil.
 ; Once upon a time we translated the hints unless ld-skip-proofsp was
@@ -12084,27 +12077,27 @@
 ; was not defined when it was first used in axioms.lisp.  This choice is
 ; a little unsettling because it means
 
-                   (hints (if (or (eq ld-skip-proofsp 'include-book)
-                                  (eq ld-skip-proofsp 'include-book-with-locals)
-                                  (eq ld-skip-proofsp 'initialize-acl2))
-                              (value nil)
-                            (translate-hints+ name
-                                              hints
+                   (thints (if (or (eq ld-skip-proofsp 'include-book)
+                                   (eq ld-skip-proofsp 'include-book-with-locals)
+                                   (eq ld-skip-proofsp 'initialize-acl2))
+                               (value nil)
+                             (translate-hints+ name
+                                               hints
 
 ; If there are :instructions, then default hints are to be ignored; otherwise
 ; the error just below will prevent :instructions in the presence of default
 ; hints.
 
-                                              (and (null instructions)
-                                                   (default-hints wrld1))
-                                              ctx wrld1 state)))
+                                               (and (null instructions)
+                                                    (default-hints wrld1))
+                                               ctx wrld1 state)))
                    (ttree2 (cond (instructions
                                   (er-progn
-                                   (cond (hints (er soft ctx
-                                                    "It is not permitted to ~
-                                                     supply both ~
-                                                     :INSTRUCTIONS and :HINTS ~
-                                                     to DEFTHM."))
+                                   (cond (thints (er soft ctx
+                                                     "It is not permitted to ~
+                                                      supply both ~
+                                                      :INSTRUCTIONS and ~
+                                                      :HINTS to DEFTHM."))
                                          (t (value nil)))
                                    #+:non-standard-analysis
                                    (if std-p
@@ -12124,7 +12117,7 @@
                                            (make-pspv ens wrld1 state
                                                       :displayed-goal term
                                                       :otf-flg otf-flg)
-                                           hints ens wrld1 ctx state))))
+                                           thints ens wrld1 ctx state))))
                    (ttree3 (cond (ld-skip-proofsp (value nil))
                                  (t (prove-corollaries name tterm0 classes
                                                        ens wrld1 ctx
@@ -12178,11 +12171,15 @@
      event-form
      #+:non-standard-analysis std-p)))
 
-(defun thm-fn (term state hints otf-flg event-form)
+(defun thm-fn (term state instructions hints otf-flg event-form)
   (let ((event-form (or event-form
                         `(thm ,term
-                              ,@(and hints `(:hints ,hints))
-                              ,@(and otf-flg `(:otf-flg ,otf-flg))))))
+                              ,@(and instructions
+                                     `(:instructions ,instructions))
+                              ,@(and hints
+                                     `(:hints ,hints))
+                              ,@(and otf-flg
+                                     `(:otf-flg ,otf-flg))))))
     (er-progn
      (with-ctx-summarized
       "( THM ...)"
@@ -12193,17 +12190,33 @@
        (t
         (let ((wrld (w state))
               (ens (ens state)))
-          (er-let* ((hints (translate-hints+ 'thm
-                                             hints
-                                             (default-hints wrld)
-                                             ctx wrld state)))
+          (er-let* ((instructions (translate-instructions instructions ctx
+                                                          state))
+                    (thints (translate-hints+ 'thm
+                                              hints
+                                              (default-hints wrld)
+                                              ctx wrld state)))
             (er-let* ((tterm (translate term t t t ctx wrld state))
 ; known-stobjs = t (stobjs-out = t)
-                      (ttree (prove tterm
-                                    (make-pspv ens wrld state
-                                               :displayed-goal term
-                                               :otf-flg otf-flg)
-                                    hints ens wrld ctx state)))
+                      (ttree
+                       (cond
+                        ((and instructions thints)
+                         (er soft ctx
+                             "It is not permitted to supply both ~
+                              :INSTRUCTIONS and :HINTS to THM."))
+                        (instructions
+                         (proof-builder nil ; name
+                                        term
+                                        tterm
+                                        nil ; classes
+                                        instructions
+                                        wrld state))
+                        (t
+                         (prove tterm
+                                (make-pspv ens wrld state
+                                           :displayed-goal term
+                                           :otf-flg otf-flg)
+                                thints ens wrld ctx state)))))
 
               (pprogn
 ; Set accumulated-ttree to the ttree returned by prove, as is done in
@@ -12222,7 +12235,7 @@
              (value :invisible)))))
 
 (defmacro thm (&whole event-form
-                      term &key hints otf-flg)
+                      term &key instructions hints otf-flg)
 
 ; We started using make-event here in January, 2019.  Instead of defining
 ; thm-fn above and generating a call of it below, we could presumably generate
@@ -12236,6 +12249,7 @@
      (make-event (er-progn (with-output :stack :pop
                              (thm-fn ',term
                                      state
+                                     ',instructions
                                      ',hints
                                      ',otf-flg
                                      ',event-form))

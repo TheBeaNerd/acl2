@@ -1,7 +1,7 @@
 ; Parsing counterexamples from STP
 ;
 ; Copyright (C) 2008-2011 Eric Smith and Stanford University
-; Copyright (C) 2013-2023 Kestrel Institute
+; Copyright (C) 2013-2024 Kestrel Institute
 ; Copyright (C) 2016-2020 Kestrel Technology, LLC
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
@@ -12,12 +12,11 @@
 
 (in-package "ACL2")
 
-;(include-book "std/strings/decimal" :dir :system) ; todo: reduce, for STR::PARSE-NAT-FROM-CHARLIST and str::skip-leading-digits
-;(include-book "std/strings/binary" :dir :system) ; todo: reduce, for STR::PARSE-BITS-FROM-CHARLIST and str::skip-leading-bit-digits
 (include-book "std/util/bstar" :dir :system)
 (include-book "kestrel/utilities/read-chars" :dir :system)
 (include-book "kestrel/utilities/erp" :dir :system)
 (include-book "kestrel/alists-light/lookup-equal" :dir :system)
+(include-book "kestrel/alists-light/lookup-safe" :dir :system)
 (include-book "kestrel/lists-light/reverse-list" :dir :system)
 (include-book "kestrel/strings-light/parse-binary-digits" :dir :system)
 (include-book "kestrel/strings-light/parse-decimal-digits" :dir :system)
@@ -26,10 +25,18 @@
 (include-book "nodenum-type-alists")
 (include-book "kestrel/typed-lists-light/all-integerp" :dir :system)
 (include-book "kestrel/lists-light/repeat" :dir :system)
+(include-book "kestrel/bv-lists/logext-list" :dir :system)
+(include-book "dag-arrays")
 (local (include-book "kestrel/lists-light/len" :dir :system))
 (local (include-book "kestrel/alists-light/assoc-equal" :dir :system))
+(local (include-book "kestrel/alists-light/alistp" :dir :system))
 (local (include-book "kestrel/typed-lists-light/character-listp" :dir :system))
 (local (include-book "kestrel/lists-light/append" :dir :system))
+
+(defthm all-integerp-of-strip-cars-when-nodenum-type-alistp
+  (implies (nodenum-type-alistp alist)
+           (all-integerp (strip-cars alist)))
+  :hints (("Goal" :in-theory (enable nodenum-type-alistp))))
 
 (defthm alistp-of-reverse-list
   (equal (alistp (reverse-list x))
@@ -80,14 +87,15 @@
                 (raw-counterexamplep y))
            (raw-counterexamplep (append x y))))
 
-(defthm raw-counterexamplep-of-rev
+(defthm raw-counterexamplep-of-reverse-list
   (implies (raw-counterexamplep x)
            (raw-counterexamplep (reverse-list x))))
 
+;; Is the value if not a boolean it must be a natural.
 (defthmd natp-of-lookup-equal-when-raw-counterexamplep
   (implies (and (raw-counterexamplep raw-counterexample)
-                (not (booleanp (lookup-equal nodenum raw-counterexample))))
-           (natp (lookup-equal nodenum raw-counterexample)))
+                (not (booleanp (lookup-equal key raw-counterexample))))
+           (natp (lookup-equal key raw-counterexample)))
   :hints (("Goal" :in-theory (enable raw-counterexamplep lookup-equal))))
 
 (defconst *assert-chars* (coerce "ASSERT( " 'list))
@@ -96,6 +104,7 @@
 
 (defconst *normal-node-chars* (coerce "NODE" 'list))
 
+;;move
 ;;returns (mv matchp rest-chars)
 (defund match-chars (fixed-chars chars)
   (declare (xargs :guard (and (character-listp chars)
@@ -116,9 +125,7 @@
   :hints (("Goal" :in-theory (enable match-chars))))
 
 (defthm len-of-mv-nth-1-of-match-chars
-  (implies (and (mv-nth 0 (match-chars fixed-chars chars))
-;                (<= (len fixed-chars) (len chars))
-                )
+  (implies (mv-nth 0 (match-chars fixed-chars chars))
            (equal (len (mv-nth 1 (match-chars fixed-chars chars)))
                   (- (len chars)
                      (len fixed-chars))))
@@ -126,18 +133,16 @@
 
 (defthm character-listp-of-mv-nth-1-of-match-chars
   (implies (character-listp chars)
-           (character-listp (MV-NTH 1 (match-chars fixed-chars chars))))
+           (character-listp (mv-nth 1 (match-chars fixed-chars chars))))
   :hints (("Goal" :in-theory (enable match-chars))))
 
 (defthm true-listp-of-mv-nth-1-of-match-chars
   (implies (true-listp chars)
-           (true-listp (MV-NTH 1 (match-chars fixed-chars chars))))
+           (true-listp (mv-nth 1 (match-chars fixed-chars chars))))
   :rule-classes (:rewrite :type-prescription)
   :hints (("Goal" :in-theory (enable match-chars))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; ; returns (mv number remainingchars)
 ;; (defund parse-binary-number (chars)
@@ -210,6 +215,8 @@
   :rule-classes (:rewrite :type-prescription)
   :hints (("Goal" :in-theory (enable parse-boolean))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;; returns (mv value chars)
 ;; parse something like " = 0b00 );" or "<=>TRUE );"
 (defund parse-equality-etc (chars all-chars)
@@ -268,6 +275,7 @@
   :rule-classes (:rewrite :type-prescription)
   :hints (("Goal" :in-theory (enable parse-equality-etc))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;returns (mv array-index-or-nil chars)
 ;;example "[0b4]"
@@ -316,6 +324,8 @@
       (natp (mv-nth 0 (maybe-parse-array-index chars all-chars))))
   :rule-classes (:rewrite :type-prescription)
   :hints (("Goal" :in-theory (enable maybe-parse-array-index))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; returns a raw-counterexamplep or :error
 ;;examples:
@@ -375,6 +385,8 @@
 
 (verify-guards parse-counterexample)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;; A counterexample pairs nodenums to values.
 (defun counterexamplep (cex)
   (declare (xargs :guard t))
@@ -419,23 +431,7 @@
            (<= 0 (maxelem (strip-cars cex))))
   :rule-classes (:linear))
 
-(defthm <=-of-0-and-maxelem-of-strip-cars-when-nodenum-type-alistp
-  (implies (and (nodenum-type-alistp alist)
-                (consp alist))
-           (<= 0 (maxelem (strip-cars alist))))
-  :rule-classes (:linear)
-  :hints (("Goal" :in-theory (enable nodenum-type-alistp))))
-
-(defthm integerp-of-maxelem-of-strip-cars-when-nodenum-type-alistp
-  (implies (and (nodenum-type-alistp alist)
-                (consp alist))
-           (integerp (maxelem (strip-cars alist))))
-  :hints (("Goal" :in-theory (enable nodenum-type-alistp))))
-
-(defthm all-integerp-of-strip-cars-when-nodenum-type-alistp
-  (implies (nodenum-type-alistp alist)
-           (all-integerp (strip-cars alist)))
-  :hints (("Goal" :in-theory (enable nodenum-type-alistp))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defund set-array-vals-from-counterexample (raw-counterexample nodenum array-val)
   (declare (xargs :guard (and (raw-counterexamplep raw-counterexample)
@@ -450,7 +446,7 @@
       (if (and (consp key)
                (eql (car key) nodenum)) ;;(nodenum . index)
           (set-array-vals-from-counterexample (rest raw-counterexample) nodenum (update-nth
-                                                                                 (cdr key) ;the array indx
+                                                                                 (cdr key) ;the array index
                                                                                  (cdr entry)
                                                                                  array-val))
         (set-array-vals-from-counterexample (rest raw-counterexample) nodenum array-val)))))
@@ -460,11 +456,7 @@
            (true-listp (set-array-vals-from-counterexample raw-counterexample nodenum array-val)))
   :hints (("Goal" :in-theory (enable set-array-vals-from-counterexample))))
 
-
-
-;(local (in-theory (disable LIST-TYPEP BV-ARRAY-TYPEP)))
-
-;(local (in-theory (disable bv-array-typep bv-typep BV-ARRAY-TYPE-LEN MOST-GENERAL-TYPEP)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Returns (mv erp counterexample).  Builds an alist that assigns a value to
 ;; each nodenum in cut-nodenum-type-alist.  For arrays, harvests values of
@@ -520,8 +512,6 @@
            (alistp (mv-nth 1 (fixup-counterexample cut-nodenum-type-alist raw-counterexample acc))))
   :hints (("Goal" :in-theory (enable fixup-counterexample))))
 
-;(verify-guards fixup-counterexample :hints (("Goal" :in-theory (enable nodenum-type-alistp))))
-
 (defthm strip-cars-of-mv-nth-1-of-fixup-counterexample
   (implies (not (mv-nth 0 (fixup-counterexample cut-nodenum-type-alist raw-counterexample acc)))
            (equal (strip-cars (mv-nth 1 (fixup-counterexample cut-nodenum-type-alist raw-counterexample acc)))
@@ -546,10 +536,12 @@
                                    counterexamplep acons
                                    nodenum-type-alistp
                                    natp-of-lookup-equal-when-raw-counterexamplep)
-                                  (boolean-typep bv-typep bv-array-typep bv-array-type-len)))))
+                                  (boolean-typep bv-typep ;bv-array-typep bv-array-type-len
+                                                 )))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Recognizes a counterexample all of whose nodes are less than BOUND.
 (defund bounded-counterexamplep (cex bound)
   (declare (xargs :guard (integerp bound)))
   (and (counterexamplep cex)
@@ -561,3 +553,45 @@
                 (bounded-counterexamplep acc bound))
            (bounded-counterexamplep (mv-nth 1 (fixup-counterexample cut-nodenum-type-alist raw-counterexample acc)) bound))
   :hints (("Goal" :in-theory (enable fixup-counterexample bounded-counterexamplep nodenum-type-alistp))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; TODO: Also chop arrays whose lengths are not powers of 2?
+(defund print-counterexample (cex cut-nodenum-type-alist print-signedp dag-array-name dag-array)
+  (declare (xargs :guard (and (counterexamplep cex)
+                              (nodenum-type-alistp cut-nodenum-type-alist)
+                              (booleanp print-signedp) ; whether to print BVs as signed integers
+                              (if (consp cex)
+                                  (pseudo-dag-arrayp dag-array-name dag-array (+ 1 (maxelem (strip-cars cex))))
+                                t))))
+  (if (endp cex)
+      nil
+    (b* ((entry (first cex))
+         (nodenum (car entry))
+         (value (cdr entry))
+         (type (lookup-safe nodenum cut-nodenum-type-alist))
+         ;;(expr (aref1 dag-array-name dag-array nodenum))
+         (expr (dag-to-term-aux-array dag-array-name dag-array nodenum))
+         (value (if (and print-signedp (symbolp expr)) ; for now, only do it for vars
+                    (if (bv-typep type)
+                        (let ((width (bv-type-width type)))
+                          (if (not (unsigned-byte-p width value))
+                              (er hard? 'print-counterexample "Wrong type value, ~x0, for node ~x1 (should be a BV of size ~x2)." value nodenum width)
+                            (if (posp width)
+                                (logext width value)
+                              (er hard? 'print-counterexample "Can't treat a BV as signed when it has width 0."))))
+                      (if (bv-array-typep type)
+                          (let ((array-len (bv-array-type-len type))
+                                (element-width (bv-array-type-element-width type)))
+                            (if (posp element-width)
+                                 ; todo: drop the bvchop-list and the true-list-fix?
+                                (logext-list element-width (bvchop-list element-width
+                                                                        (take array-len (true-list-fix value)) ; todo: ensure there are at least enough (there may be extra elements if we rounded the array size up to a power of 2
+                                                                        ))
+                              (er hard? 'print-counterexample "Can't treat an array as signed when its elements are of width 0.")))
+                        value))
+                  value))
+         (- (cw "  Node ~x0: ~x1 is ~x2." nodenum expr value))
+         ;; Print newline unless this is the last line:
+         (- (and (consp (rest cex)) (cw "~%"))))
+      (print-counterexample (rest cex) cut-nodenum-type-alist print-signedp dag-array-name dag-array))))

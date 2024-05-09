@@ -1,7 +1,7 @@
 ; Making Axe rules and rule-alists from formulas
 ;
 ; Copyright (C) 2008-2011 Eric Smith and Stanford University
-; Copyright (C) 2013-2020 Kestrel Institute
+; Copyright (C) 2013-2023 Kestrel Institute
 ; Copyright (C) 2016-2020 Kestrel Technology, LLC
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
@@ -45,6 +45,7 @@
 (local (include-book "kestrel/utilities/pseudo-termp" :dir :system))
 (local (include-book "kestrel/typed-lists-light/pseudo-term-listp" :dir :system))
 (local (include-book "kestrel/arithmetic-light/plus" :dir :system))
+(local (include-book "kestrel/terms-light/all-fnnames1" :dir :system))
 
 (in-theory (disable ilks-plist-worldp
                     plist-worldp)) ;move
@@ -138,7 +139,7 @@
     (if (myquotep term) ;quoted constant (may arise from the translation of an IF)
         (mv (erp-nil) term)
       (let ((fn (ffn-symb term)))
-        (if (and (eq 'quotep fn) ; (quotep <var>), convert to axe-quotep (why?)
+        (if (and (eq 'quotep fn) ; (quotep <var>)
                  (= 1 (len (fargs term)))
                  (symbolp (first (fargs term)))
                  ;; (not (eq 'dag-array (first (fargs term)))) ;todo: think about this?
@@ -379,7 +380,7 @@
                  ((when (not (axe-syntaxp-exprp axe-syntaxp-expr)))
                   (er hard? 'make-axe-rule-hyps-for-hyp "Ill-formed axe-syntaxp argument ~x0 in rule ~x1." axe-syntaxp-expr rule-symbol)
                   (mv :bad-syntaxp-argument *unrelievable-hyps* bound-vars))
-                 ;; Drops dag-array formals passed a last args to functions:
+                 ;; Drops dag-array formals passed as last args to functions:
                  (processed-axe-syntaxp-expr (process-axe-syntaxp-expr axe-syntaxp-expr wrld))
                  (mentioned-vars (free-vars-in-term processed-axe-syntaxp-expr)) ;dag-array has been perhaps removed
                  (allowed-vars bound-vars ;(cons 'dag-array bound-vars)
@@ -1001,10 +1002,10 @@
 (defund make-axe-rule (lhs rhs rule-symbol hyps extra-hyps print wrld)
   (declare (xargs :guard (and (axe-rule-lhsp lhs)
                               (pseudo-termp rhs)
+                              (symbolp rule-symbol)
                               (pseudo-term-listp hyps) ;; from the theorem, unprocessed
                               (axe-rule-hyp-listp extra-hyps) ;; already processed, don't bind any vars, for stopping loops
                               (all-axe-syntaxp-hypsp extra-hyps)
-                              (symbolp rule-symbol)
                               (plist-worldp wrld))))
   (b* ((- (and print (cw "(Making Axe rule: ~x0.)~%" rule-symbol)))
        (lhs-vars (free-vars-in-term lhs))
@@ -1348,7 +1349,7 @@
 ;;; make-axe-rules-from-theorem
 ;;;
 
-;; Returns (mv erp axe-rules).
+;; Returns (mv erp axe-rules).  If the conclusion is a conjunction, we get multiple rules.
 (defund make-axe-rules-from-theorem (theorem-body rule-symbol rule-classes known-boolean-fns print wrld)
   (declare (xargs :guard (and (pseudo-termp theorem-body)
                               (symbolp rule-symbol)
@@ -1423,6 +1424,14 @@
                 (body (remove-guard-holders-and-clean-up-lambdas body) ;(strip-return-last body)
                       )
                 (body (drop-unused-lambda-bindings body))
+                (clique (true-list-fix ; drop?
+                          (recursivep rule-name nil wrld))) ; todo: consider :definition rules and the flg option here
+                (body-fns (all-fnnames body))
+                (- (if (member-eq rule-name body-fns)
+                       (cw "Warning: Make safe openers for recursive function ~x0.~%" rule-name)
+                     (if (intersection-eq clique body-fns)
+                         (cw "Warning: Make safe openers for mut. rec. function ~x0.~%" rule-name)
+                       nil)))
                 (lhs (cons rule-name formals))
                 ;; Make a rule equating a call of the function (on its formals)
                 ;; with its body (note: for recursive functions, it may be
@@ -1539,6 +1548,7 @@
     (mv (erp-nil)
         (union-equal rules rule-set))))
 
+;; this is really axe-rule-setsp:
 (defforall-simple axe-rule-listp)
 (verify-guards all-axe-rule-listp)
 

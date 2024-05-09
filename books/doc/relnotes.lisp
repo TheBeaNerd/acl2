@@ -123,12 +123,29 @@
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+   (xdoc::h4 "Gaussian Elimination Library")
+
+   (xdoc::p
+    "This is a work in progress for solving Ax = b, for sparse matrices A.")
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
    (xdoc::h4 "Group Theory Library")
 
    (xdoc::p
     "Added seven books to @('projects/groups/') on the topics of homomorphisms,
      direct products, the Fundamental Theorem of Finite Abelian Groups,
      symmetric groups, group actions, the Sylow theorems, and simple groups.")
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+   (xdoc::h4 "Machine Learning Library")
+
+   (xdoc::p
+    "Added support and testing for generation of *__acl2data.out files for
+     machine learning.  The idea is to break proofs systematically and record
+     resulting information, including checkpoints.  See
+     @('kestrel/acl2data/README') and @('kestrel/acl2data/gather/README').")
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -178,6 +195,11 @@
     "The @(tsee apt::simplify) transformation, when called with option
      @(':untranslate t'), removes some unused @(tsee let) bindings and @(tsee
      let*) bindings that formerly remained.")
+
+   (xdoc::p
+    "The @(tsee apt::restrict) transformation has been improved
+     to generate more robust proofs,
+     which get around certain ACL2 heuristics.")
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -272,6 +294,10 @@
     (xdoc::seetopic "fty::defresult" "result types")
     ", some names have been improved.")
 
+   (xdoc::p
+    "A fixtype @(tsee pos-set) for sets of positive integers has been added,
+     along with some operations on these sets.")
+
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
    (xdoc::h4 (xdoc::seetopic "kestrel-utilities" "Kestrel Utilities Library"))
@@ -297,15 +323,39 @@
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+   (xdoc::h4 (xdoc::seetopic "obag::obags" "Ordered Bags (Obags) Library"))
+
+   (xdoc::p
+    "Renamed @('obag::empty') to @(tsee obag::emptyp).")
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
    (xdoc::h4 (xdoc::seetopic "omap::omaps" "Ordered Maps (Omaps) Library"))
 
    (xdoc::p
     "Added some theorems.")
 
+   (xdoc::p
+    "Disabled some rules.")
+
+   (xdoc::p
+    "Improved documentation and organization.")
+
+   (xdoc::p
+    "Renamed @('omap::empty') to @(tsee omap::emptyp).")
+
+   (xdoc::p
+    "Renamed @('omap::in') to @(tsee omap::assoc).")
+
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-   (xdoc::h4 (xdoc::seetopic "pfcs::prime-field-constraint-systems"
+   (xdoc::h4 (xdoc::seetopic "pfcs::pfcs"
                              "PFCS (Prime Field Constraint System) Library"))
+
+   (xdoc::p
+    "The library has been moved
+     from @('[books]/kestrel/crypto/pfcs')
+     to @('[books]/projects/pfcs').")
 
    (xdoc::p
     "A concrete syntax for PFCSes, in the form of an ABNF grammar,
@@ -316,6 +366,15 @@
      by using strings instead of symbols
      for names of relations and variables.
      This is more consistent with the concrete syntax.")
+
+   (xdoc::p
+    "Convenience constructors for the abstract syntax have been added.")
+
+   (xdoc::p
+    "Utilities have been added to build indexed names,
+     useful for defining families of PFCS gadgets.
+     The utilities are accompanied by theorems,
+     useful to prove certain properties about the gadget families.")
 
    (xdoc::p
     "The formal notion of system (in the PFCS sense) has been improved,
@@ -401,6 +460,16 @@
      See the documentation for details,
      including functional differences with @(tsee guard-theorem-no-simplify).")
 
+   (xdoc::p
+    "Theorems about the built-in @(tsee fsubcor-var) have been added.")
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+   (xdoc::h4 (xdoc::seetopic "set::std/osets" "Standard Osets Library"))
+
+   (xdoc::p
+    "The @('set::empty') function has been renamed to @(tsee set::emptyp).")
+
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
    (xdoc::h4 (xdoc::seetopic "std/typed-alists"
@@ -454,6 +523,46 @@
      due to running on a slow machine, or with many threads when few are
      available).")
 
+   (xdoc::p
+    "Tools @(tsee functions-after) and @(tsee macros-after) return names of
+     functions and macros, respectively, that were introduced after a given
+     name.")
+
+   (xdoc::p
+    "@(tsee Make-flag) now causes a user-friendly error when the formal
+     parameters list is changed by an alternative definition specified by the
+     @(':BODY') argument.")
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+   (xdoc::h4 (xdoc::seetopic "x86isa::x86isa" "X86ISA Library"))
+
+   (xdoc::p
+    "Support has been added for the following VEX instructions:")
+   (xdoc::ul
+    (xdoc::li
+     "SHL, SHRX, SARX")
+    (xdoc::li
+     "VMOVUPS")
+    (xdoc::li
+     "VZEROUPPER")
+    (xdoc::li
+     "VANDPD, VANDPS,
+      VANDNPD, VANDNPS,
+      VORPD, VORPS,
+      VXORPD, VXORPS,
+      VPAND,
+      VPANDN,
+      VPOR,
+      VPXOR")
+    (xdoc::li
+     "VPADDB, VPADDW, VPADDD, VPADDQ (VEX versions)")
+    (xdoc::li
+     "VPSUBB, VPSUBW, VPSUBD, VPSUBQ (VEX versions)"))
+
+   (xdoc::p
+    "Some memory accessing functions for larger sizes have been added.")
+
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
    (xdoc::h4 (xdoc::seetopic "xdoc::xdoc" "XDOC Library"))
@@ -483,6 +592,25 @@
      install-not-normalized-event) have been tweaked to use the so-called
      <i>unnormalized</i> body, which can avoid errors for functions that call
      @(tsee wormhole-eval).")
+
+   (xdoc::p
+    "The utilities @(tsee er-soft-logic) and @(tsee er-soft+) are unchanged.
+     But one might consider avoiding those two utilities now that @('(er soft
+     ...)') may be used in @(':')@(tsee logic) mode (however, at the cost of
+     generating @(see guard) proof obligations).")
+
+   (xdoc::p
+    "The book @('system/top.lisp') has changed, the main effect being that
+     although it still includes the book @('fmx-cw') in that directory, that
+     book has changed significantly.  The lemmas formerly in @('fmx-cw') are
+     now in a new book, @('fmx-cw-support'), which is not included in
+     @('system/top.lisp').")
+
+   (xdoc::p
+    "The behavior of function @('computed-hint-rewrite') in @(see
+     community-book) @('books/misc/computed-hint-rewrite.lisp') has been
+     tweaked to be properly in sync with that of source function
+     @('simplify-clause').")
 
    ))
 
@@ -1114,7 +1242,7 @@ to be a keeper command.")
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-   (xdoc::h4 (xdoc::seetopic "pfcs::prime-field-constraint-systems"
+   (xdoc::h4 (xdoc::seetopic "pfcs::pfcs"
                              "PFCS (Prime Field Constraint System) Library"))
 
    (xdoc::p
@@ -1707,7 +1835,7 @@ specialization of @(tsee r1cs::verify-r1cs).")
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-   (xdoc::h4 (xdoc::seetopic "pfcs::prime-field-constraint-systems"
+   (xdoc::h4 (xdoc::seetopic "pfcs::pfcs"
                              "PFCS (Prime Field Constraint System) Library"))
 
    (xdoc::p

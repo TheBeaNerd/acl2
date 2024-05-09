@@ -1,7 +1,7 @@
 ; The main (old-style) Axe evaluator
 ;
 ; Copyright (C) 2008-2011 Eric Smith and Stanford University
-; Copyright (C) 2013-2022 Kestrel Institute
+; Copyright (C) 2013-2024 Kestrel Institute
 ; Copyright (C) 2016-2020 Kestrel Technology, LLC
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
@@ -25,11 +25,15 @@
 (include-book "kestrel/world-light/fn-definedp" :dir :system)
 (include-book "kestrel/utilities/terms" :dir :system) ;for GET-FNS-IN-TERM
 (include-book "kestrel/arithmetic-light/ceiling-of-lg" :dir :system)
+(include-book "kestrel/booleans/booland" :dir :system)
+(include-book "kestrel/booleans/boolor" :dir :system)
+(include-book "kestrel/booleans/boolif" :dir :system)
 (include-book "kestrel/bv/defs" :dir :system) ;reduce? gets us bool-to-bit
 (include-book "kestrel/bv/unsigned-byte-p-forced" :dir :system)
 (include-book "kestrel/bv-lists/packbv" :dir :system)
 (include-book "kestrel/bv-lists/width-of-widest-int" :dir :system)
-(include-book "kestrel/bv-lists/bv-arrays" :dir :system) ; reduce?
+(include-book "kestrel/bv-lists/bv-array-read" :dir :system)
+(include-book "kestrel/bv-lists/bv-array-write" :dir :system)
 (include-book "kestrel/bv-lists/bv-array-clear" :dir :system)
 (include-book "kestrel/bv-lists/map-packbv" :dir :system) ;for map-packbv, map-reverse-list, etc.
 (include-book "kestrel/bv-lists/bytes-to-bits" :dir :system)
@@ -389,7 +393,7 @@
            (bitnot bitnot-unguarded arg1)   ;see bitnot-unguarded-correct
            (logmaskp logmaskp arg1)         ;drop?
            (integer-length integer-length-unguarded arg1) ;see INTEGER-LENGTH-UNGUARDED-CORRECT
-           (ceiling-of-lg ceiling-of-lg arg1)
+           (ceiling-of-lg ceiling-of-lg-unguarded arg1) ; see ceiling-of-lg-unguarded-correct
            (unary-/ unary-/-unguarded arg1) ;see unary-/-unguarded-correct
            (nfix nfix arg1)                 ;unguarded
            (ifix ifix arg1)                 ;unguarded
@@ -408,6 +412,8 @@
            (symbolp symbolp arg1) ;guard of t
            (characterp characterp arg1) ;guard of t
            (complex-rationalp complex-rationalp arg1) ;guard of t
+           (denominator denominator-unguarded arg1)
+           (numerator numerator-unguarded arg1)
            )
          (acons 2
                 '((mv-nth mv-nth-unguarded arg1 arg2)
@@ -480,7 +486,7 @@
                   (cons cons arg1 arg2)               ;primitive
                   (bvchop bvchop-unguarded arg1 arg2) ;see bvchop-unguarded-correct
                   (logtail$inline logtail-unguarded arg1 arg2) ;see logtail-unguarded-correct
-                  (logext logext arg1 (ifix arg2))
+                  (logext logext-unguarded arg1 arg2) ;see logext-unguarded-correct
                   (nth nth-unguarded arg1 arg2) ;see nth-unguarded-correct
                   (binary-* binary-*-unguarded arg1 arg2) ;see binary-*-unguarded-correct
                   (bvnot-list bvnot-list-unguarded arg1 arg2) ;see bvnot-list-unguarded-correct
@@ -510,7 +516,7 @@
 
                          ;many of these call bvchop, whose guard should be improved..
                          (bvplus-lst bvplus-lst arg1 arg2 arg3)
-
+                         (bvequal    bvequal-unguarded arg1 arg2 arg3)  ;see   bvequal-unguarded-correct
                          (bvlt      bvlt-unguarded arg1 arg2 arg3)  ;see    bvlt-unguarded-correct
                          (bvle      bvle-unguarded arg1 arg2 arg3)  ;see    bvle-unguarded-correct
                          (bvxor    bvxor-unguarded arg1 arg2 arg3)  ;see   bvxor-unguarded-correct

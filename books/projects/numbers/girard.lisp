@@ -18,7 +18,7 @@
   :rule-classes ())
 
 ;; Our objective is the converse, which was first observed by Girard in 1625.  Thus, given a 
-;; prime p with (mod p 4) = 1, we shall construct a pair natural number a and b such that
+;; prime p with (mod p 4) = 1, we shall construct a pair of natural numbers a and b such that
 ;; p = (+ (* a a) (* b b)):
 
 ;; (defthmd prime-sum-squares-converse
@@ -64,7 +64,7 @@
 	        (and (natp n)
 	             (<= (* n n) p)))))
 
-;; It follows from member-sqrt-list that (sqrt-list p) is a dlist:
+;; Note that (sqrt-list p) is a dlist:
 
 (defthmd dlistp-sqrt-list
   (implies (posp p)
@@ -88,32 +88,32 @@
 
 ;; We define a list of all pairs of members of a list l:
 
-(defun pairs-aux (l m)
+(defun cart-prod (l r)
   (if (consp l)
-      (append (conses (car l) m)
-              (pairs-aux (cdr l) m))
+      (append (conses (car l) r)
+              (cart-prod (cdr l) r))
     ()))
 
-(defund pairs (l)
-  (pairs-aux l l))
+(defund cart-square (l)
+  (cart-prod l l))
 
-(defthmd member-pairs
-  (implies (member-equal x (pairs l))
+(defthmd member-cart-square
+  (implies (member-equal x (cart-square l))
            (and (consp x)
 	        (member-equal (car x) l)
 		(member-equal (cdr x) l))))
 
-;; If l is a dlist, then so is (pairs l):
+;; If l is a dlist, then so is (cart-square l):
 
-(defthm dlistp-pairs
+(defthm dlistp-cart-square
   (implies (dlistp l)
-           (dlistp (pairs l))))
+           (dlistp (cart-square l))))
 
 ;; The length of the list of pairs of members of (sqrt-list p) is greater than p:
 
-(defthmd len-pairs-sqrt-list
+(defthmd len-cart-square-sqrt-list
   (implies (posp p)
-           (> (len (pairs (sqrt-list p)))
+           (> (len (cart-square (sqrt-list p)))
 	      p)))
 
 ;; Given an integer j and a list of pairs of integers (a . b), compute the list of
@@ -128,24 +128,24 @@
 ;; We are interested in the following instance of mod-list:
 
 (defund diff-list (p)
-  (mod-list (pairs (sqrt-list p))
+  (mod-list (cart-square (sqrt-list p))
             (root1 -1 p)
 	    p))
 
-;; Note that the length of this list is that of (pairs (sqrt-list p)):
+;; Note that the length of this list is that of (cart-square (sqrt-list p)):
 
 (defthmd len-diff-list
   (implies (posp p)
-           (and (equal (len (diff-list p)) (len (pairs (sqrt-list p))))
+           (and (equal (len (diff-list p)) (len (cart-square (sqrt-list p))))
                 (> (len (diff-list p)) p))))
 
 ;;  We have the following formula for the kth member of (diff-list p):
 
 (defthmd nth-diff-list
-  (implies (and (posp p) (natp k) (< k (len (pairs (sqrt-list p)))))
+  (implies (and (posp p) (natp k) (< k (len (cart-square (sqrt-list p)))))
            (equal (nth k (diff-list p))
-	          (mod (- (car (nth k (pairs (sqrt-list p))))
-		          (* (root1 -1 p) (cdr (nth k (pairs (sqrt-list p))))))
+	          (mod (- (car (nth k (cart-square (sqrt-list p))))
+		          (* (root1 -1 p) (cdr (nth k (cart-square (sqrt-list p))))))
 		       p))))
 
 ;; (diff-list p) is a sublist of the list (nats p) of the first p natural nunbers:
@@ -176,7 +176,7 @@
 ;; By dcex-lemma, there exist distinct indices m = (dcex1 (diff-list p)) and
 ;; n = (dcex2 (diff-list p)) such that 0 <= m < n < (len (diff-list p)) and
 ;; (nth m (diff-list p)) = (nth n (diff-list p)).  We extract the corresponding
-;; members of (pairs (sqrt-list p))::
+;; members of (cart-square (sqrt-list p))::
 
 (defthmd diff-list-diff
   (implies (and (primep p)
@@ -187,18 +187,18 @@
 
 (defund pair1 (p)
   (nth (dcex1 (diff-list p))
-       (pairs (sqrt-list p))))
+       (cart-square (sqrt-list p))))
 
 (defund pair2 (p)
   (nth (dcex2 (diff-list p))
-       (pairs (sqrt-list p))))
+       (cart-square (sqrt-list p))))
 
 ;; Note that these two pairs are distinct.
 ;; Let (pair1 p) = (a1 . b1) and (pair2 p) = (a2 . b2).  Let j = (root1 -1 p).
 ;; Then (mod (- a1 (* j b1)) p) = (mod (- a2 (* j b2)) p), which implies
 ;; (mod (- a1 a2) p) = (mod (* j (- b1 b2)) p).  Let a3 = (- a1 a2) and b3 = (- b1 b2).
-;; Since (mod (* j j) p) = (mod -1 p), we have (mod (* a a) p) = (mod (- (* b b)) p),
-;; and (+ (* a a) (* b b)) is divisible by p.  But this sum is positive and less than
+;; Since (mod (* j j) p) = (mod -1 p), we have (mod (* a3 a3) p) = (mod (- (* b3 b3)) p),
+;; and (+ (* a3 a3) (* b3 b3)) is divisible by p.  But this sum is positive and less than
 ;; (* 2 p), and therefore equal to p.
 
 (defund a1 (p) (car (pair1 p)))

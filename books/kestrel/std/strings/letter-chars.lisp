@@ -12,6 +12,8 @@
 
 (include-book "std/strings/charset" :dir :system)
 (include-book "xdoc/constructors" :dir :system)
+; Matt K. mod, 9/4/2023 (see that book for explanation), to avoid a failure.
+(local (include-book "std/basic/code-char-char-code-with-force" :dir :system))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -27,5 +29,5 @@
   (xdoc::topstring
    (xdoc::p
     "The built-in @(tsee alpha-char-p)
-     has a guard requiring characters that are standard.
+     has a guard requiring characters.
      In contrast, this recognizer has guard @('t').")))

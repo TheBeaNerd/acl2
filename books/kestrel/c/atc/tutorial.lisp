@@ -27,7 +27,7 @@
 
   (xdoc::p
    "This tutorial is work in progress,
-    but it may be already useful in its current incomplete form.
+    but it should be already useful in its current incomplete form.
     This tutorial's goal is to provide user-level pedagogical information
     on how ATC works and how to use ATC effectively.
     See "
@@ -82,7 +82,7 @@
   (xdoc::p
    "In addition, as a specific motivation for generating C code,
     it should be noted that C is widely used in certain domains,
-    such as embedded systems.
+    such as embedded systems and device drivers.
     Some of these C applications are relatively small in size
     and have strong safety and security requirements,
     making them an attractive target for (ACL2-based) formal methods."))
@@ -99,12 +99,12 @@
   (xdoc::p
    "ATC is related to "
    (xdoc::seetopic "java::atj" "ATJ")
-   ", the Java code generator for ACL2.
+   ", a Java code generator for ACL2.
     Aside from the obvious difference in target languages,
     ATJ and ATC currently differ in their primary goals and emphases.")
 
   (xdoc::p
-   "ATJ was built to recognize, and translate to reasonable Java,
+   "ATJ is built to recognize, and translate to reasonable Java,
     essentially any ACL2 code
     (provided that it has side effects known to ATJ).
     ATJ also provides ways to exert finer-grained control
@@ -117,12 +117,12 @@
     ATJ currently does not generate proofs.")
 
   (xdoc::p
-   "In contrast, ATC is being built to recognize, and translate to C,
+   "In contrast, ATC is built to recognize, and translate to C,
     only certain ACL2 types and operations
     that represent C types and operations
     and that are translated to the corresponding Java constructs.
     ATC does not attempt to translate arbitrary ACL2 to C.
-    From the outset, ATC also generates ACL2 proofs
+    ATC also generates ACL2 proofs
     of the correctness of the generated C code.")
 
   (xdoc::p
@@ -200,8 +200,7 @@
      to the ACL2 code that represents it.
      In other words, it computes the same things as the ACL2 code.
      This is expressed via a "
-    (xdoc::seetopic "dynamic-semantics"
-                    "formal dynamic semantics of C")
+    (xdoc::seetopic "dynamic-semantics" "formal dynamic semantics of C")
     ".")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -238,7 +237,7 @@
     consists of a sign bit, some value bits, and optionally some padding bits
     [C:6.2.6.2/2].
     The signed representation may be
-    two's complement, one's complement, or sign and magnitude
+    two's complement, ones' complement, or sign and magnitude
     [C:6.2.6.2/2].
     All these choices are implementation-dependent,
     and determine the range of @('int') values,

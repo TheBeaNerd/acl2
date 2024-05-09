@@ -13,6 +13,9 @@
 (include-book "replay-book-helpers")
 (include-book "advice")
 (include-book "kestrel/utilities/split-path" :dir :system)
+(include-book "kestrel/utilities/maybe-add-dot-lisp-extension" :dir :system)
+
+;; NOTE: See eval-models for a similar but newer tool.
 
 ;; TODO: Try advice on defthms inside encapsulates (and perhaps other forms).
 ;; TODO: Consider excluding advice that uses a different version of the same library (e.g., rtl/rel9).
@@ -36,16 +39,14 @@
 
 ;; Determines whether the Proof Advice tool can find advice for the given DEFTHM.  Either way, this also submits DEFTHM.
 ;; Returns (mv erp result state) where result is :yes, :no, :maybe (not currently used?), or :trivial.
-(defun submit-defthm-event-with-advice (defthm num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models state)
+(defun submit-defthm-event-with-advice (defthm num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout state)
   (declare (xargs :guard (and (natp num-recs-per-model)
                               (or (null current-book-absolute-path)
                                   (stringp current-book-absolute-path))
                               (booleanp improve-recsp)
                               (acl2::print-levelp print)
-                              (or (null server-url)
-                                  (stringp server-url))
-                              (natp timeout)
-                              (help::model-namesp models))
+                              (help::model-info-alistp model-info-alist)
+                              (natp timeout))
                   :mode :program
                   :stobjs state))
   (b* ((defthm-variant (car defthm)) ; defthm or defthmd, etc.
@@ -71,14 +72,14 @@
                                     t ; avoid using a book to prove its own checkpoints
                                     improve-recsp
                                     print
-                                    server-url timeout
+                                    model-info-alist timeout
                                     nil ; debug
                                     100000 ; step-limit (TODO: give time/steps proportional to what was needed for the original theorem?)
                                     5 ; time-limit
                                     '(:add-hyp) ; disallow :add-hyp, because no hyps are needed for these theorems
                                     1           ; max-wins
-                                    models
                                     t ; suppress warning about trivial rec, because below we ask if "original" is the best rec and handle trivial recs there
+                                    nil ; todo: consider t here for start and return?
                                     state))
        ;; TODO: Maybe track errors separately?  Might be that a step limit was reached before checkpoints could even be generated, so perhaps that counts as a :no?
        ((when erp) (mv erp :no state)))
@@ -119,7 +120,7 @@
 
 ;; Returns (mv erp yes-count no-count maybe-count trivial-count error-count state).
 ;throws an error if any event fails
-(defun submit-events-with-advice (events theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models
+(defun submit-events-with-advice (events theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout
                                          yes-count no-count maybe-count trivial-count error-count
                                          state)
   (declare (xargs :guard (and (true-listp events)
@@ -130,10 +131,8 @@
                                   (stringp current-book-absolute-path))
                               (booleanp improve-recsp)
                               (acl2::print-levelp print)
-                              (or (null server-url)
-                                  (stringp server-url))
-                              (natp timeout)
-                              (help::model-namesp models))
+                              (help::model-info-alistp model-info-alist)
+                              (natp timeout))
                   :mode :program
                   :stobjs state))
   (if (endp events)
@@ -143,7 +142,7 @@
           ;; It's a theorem for which we are to try advice:
           (b* ( ;; Try to prove it using advice:
                ((mv erp result state)
-                (submit-defthm-event-with-advice event num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models state))
+                (submit-defthm-event-with-advice event num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout state))
                (- (and erp
                        (cw "ERROR (~x0) with advice attempt for event ~X12 (continuing...).~%" erp event nil)
                        )))
@@ -157,9 +156,9 @@
                      ((when erp)
                       (er hard? 'submit-events-with-advice "ERROR (~x0) with event ~X12 (trying to submit with skip-proofs after error trying to use advice).~%" erp event nil)
                       (mv erp yes-count no-count maybe-count trivial-count error-count state)))
-                  (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models yes-count no-count maybe-count trivial-count error-count state))
+                  (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout yes-count no-count maybe-count trivial-count error-count state))
               ;; No error, so count the result:
-              (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models
+              (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout
                                          (if (eq :yes result) (+ 1 yes-count) yes-count)
                                          (if (eq :no result) (+ 1 no-count) no-count)
                                          (if (eq :maybe result) (+ 1 maybe-count) maybe-count)
@@ -175,7 +174,7 @@
               (cw "ERROR (~x0) with event ~X12.~%" erp event nil)
               (mv erp yes-count no-count maybe-count trivial-count error-count state))
              (- (cw "~x0~%" (shorten-event event))))
-          (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models yes-count no-count maybe-count trivial-count error-count state))))))
+          (submit-events-with-advice (rest events) theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout yes-count no-count maybe-count trivial-count error-count state))))))
 
 (defun discard-events-before-first-advice-event (events theorems-to-try)
   (declare (xargs :guard (and (true-listp events)
@@ -203,14 +202,13 @@
 ;; Reads and then submits all the events in FILENAME, trying advice for the theorems.
 ;; Returns (mv erp counts state), where counts is (list yes-count no-count maybe-count trivial-count error-count).
 ;; Since this returns an error triple, it can be wrapped in revert-world.
-(defun replay-book-with-advice-fn-aux (filename ; the book, with .lisp extension, we should have already checked that it exists
+(defun replay-book-with-advice-fn-aux (filename ; the book, with .lisp extension
                                        theorems-to-try
                                        num-recs-per-model
                                        improve-recsp
                                        print
-                                       server-url
+                                       model-info-alist
                                        timeout
-                                       models
                                        state)
   (declare (xargs :guard (and (stringp filename)
                               (or (eq :all theorems-to-try)
@@ -218,13 +216,15 @@
                               (natp num-recs-per-model)
                               (booleanp improve-recsp)
                               (acl2::print-levelp print)
-                              (or (null server-url)
-                                  (stringp server-url))
-                              (natp timeout)
-                              (help::model-namesp models))
+                              (help::model-info-alistp model-info-alist)
+                              (natp timeout))
                   :mode :program ; because this ultimately calls trans-eval-error-triple
                   :stobjs state))
-  (b* ( ;; We must avoid including the current book (or an other book that includes it) when trying to find advice:
+  (b* (((mv book-existsp state) (file-existsp filename state))
+       ((when (not book-existsp))
+        (er hard? 'replay-book-with-advice-fn-aux "The book ~x0 does not exist." filename)
+        (mv :book-does-not-exist nil state))
+       ;; We must avoid including the current book (or an other book that includes it) when trying to find advice:
        (current-book-absolute-path (canonical-pathname filename nil state))
        ((when (member-equal current-book-absolute-path
                             (all-included-books (w state))))
@@ -257,7 +257,7 @@
        ((when erp) (mv erp (list 0 0 0 0 0) state))
        ;; Submit all the events, trying advice for each defthm in theorems-to-try:
        ((mv erp yes-count no-count maybe-count trivial-count error-count state)
-        (submit-events-with-advice events theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print server-url timeout models 0 0 0 0 0 state))
+        (submit-events-with-advice events theorems-to-try num-recs-per-model current-book-absolute-path improve-recsp print model-info-alist timeout 0 0 0 0 0 state))
        ((when erp) ; I suppose we could return partial results from this book instead
         (cw "Error: ~x0.~%" erp)
         (mv erp (list 0 0 0 0 0) state))
@@ -275,59 +275,51 @@
         (list yes-count no-count maybe-count trivial-count error-count)
         state)))
 
-;; Reads and then submits all the events in FILENAME, trying advice for defthms that appear at the top level.
-;; Returns (mv erp event state).
-(defun replay-book-with-advice-fn (filename ; the book, with .lisp extension
+;; Reads and then submits all the events in the book indicated by BOOK-PATH,
+;; trying advice for defthms that appear at the top level.  Returns (mv erp
+;; event state).
+(defun replay-book-with-advice-fn (book-path ; path to the book (with or without the .lisp extension)
                                    theorems-to-try ; can be :all
                                    num-recs-per-model
                                    improve-recsp
                                    print
-                                   server-url
                                    timeout
                                    models ; can be :all
                                    state)
-  (declare (xargs :guard (and (stringp filename)
+  (declare (xargs :guard (and (stringp book-path)
                               (or (eq :all theorems-to-try)
                                   (symbol-listp theorems-to-try))
                               (natp num-recs-per-model)
                               (booleanp improve-recsp)
                               (acl2::print-levelp print)
-                              (or (null server-url)
-                                  (stringp server-url))
                               (natp timeout)
                               (or (eq :all models)
                                   (help::model-namesp models)))
                   :mode :program ; because this ultimately calls trans-eval-error-triple
                   :stobjs state))
-  (b* (((mv book-existsp state) (file-existsp filename state))
-       ((when (not book-existsp))
-        (er hard? 'replay-book-with-advice-fn "The book ~x0 does not exist." filename)
-        (mv :book-does-not-exist nil state))
-        ;; Elaborate options:
-       (models (if (eq models :all)
-                   help::*known-models*
-                 (if (help::model-namep models)
-                     (list models) ; single model stands for singleton list of that model
-                   models)))
+  (b* (;; Elaborate options:
+       (book-path (maybe-add-dot-lisp-extension book-path))
+       (model-info-alist (help::make-model-info-alist models (w state)))
        ((mv erp
             & ; counts
             state)
-        (replay-book-with-advice-fn-aux filename theorems-to-try num-recs-per-model improve-recsp print server-url timeout models state))
+        (replay-book-with-advice-fn-aux book-path theorems-to-try num-recs-per-model improve-recsp print model-info-alist timeout state))
        ((when erp) (mv erp nil state)))
     ;; No error:
     (mv nil '(value-triple :replay-succeeded) state)))
 
+;; Currently, when trying advice for a theorem, this deletes all the hints.
 ;; TODO: Add timing info.
 ;; This has no effect on the world, because all the work is done in make-event
 ;; expansion and such changes do not persist.
-(defmacro replay-book-with-advice (filename ; the book, with .lisp extension
+;; Example: (replay-book-with-advice "../lists-light/append")
+(defmacro replay-book-with-advice (book-path ; path to the book (with or without the .lisp extension)
                                    &key
                                    (theorems-to-try ':all) ; gets evaluated
                                    (n '10) ; num-recs-per-model
                                    (improve-recsp 't)
                                    (print 'nil)
-                                   (server-url 'nil) ; nil means get from environment var
                                    (timeout '40) ; for both connection timeout and read timeout
                                    (models ':all)
                                    )
-  `(make-event-quiet (replay-book-with-advice-fn ,filename ,theorems-to-try ,n ,improve-recsp ,print ,server-url ,timeout ,models state)))
+  `(make-event-quiet (replay-book-with-advice-fn ,book-path ,theorems-to-try ,n ,improve-recsp ,print ,timeout ,models state)))

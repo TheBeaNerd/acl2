@@ -1,5 +1,5 @@
 ; ACL2 Version 8.5 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2023, Regents of the University of Texas
+; Copyright (C) 2024, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -238,10 +238,8 @@
    (value (cdr pair))))
 
 (defun large-consp (x)
-  (eql (the (signed-byte 30)
-            (cons-count-bounded x))
-       (the (signed-byte 30)
-            (fn-count-evg-max-val))))
+  (eql (the #.*fixnat-type* (cons-count-bounded x))
+       (the #.*fixnat-type* (fn-count-evg-max-val))))
 
 (defun defconst-fn (name form state event-form)
 
@@ -495,15 +493,17 @@
             (list 'quote event-form)))
     (defmacro verify-guards (&whole event-form name
                                     &key
-                                    hints otf-flg guard-debug
-                                    (guard-simplify 't))
+                                    (hints 'nil hints-p)
+                                    (guard-debug 'nil guard-debug-p)
+                                    (guard-simplify 't guard-simplify-p)
+                                    otf-flg)
       (list 'verify-guards-fn
             (list 'quote name)
             'state
-            (list 'quote hints)
+            (list 'quote hints) (list 'quote hints-p)
             (list 'quote otf-flg)
-            (list 'quote guard-debug)
-            (list 'quote guard-simplify)
+            (list 'quote guard-debug) (list 'quote guard-debug-p)
+            (list 'quote guard-simplify) (list 'quote guard-simplify-p)
             (list 'quote event-form)))
     (defmacro defmacro (&whole event-form &rest mdef)
       (list 'defmacro-fn
@@ -811,7 +811,7 @@
               (('defmacro name macro-args
                  ('list ('quote name-fn) . actuals))
                (let* ((formals (primordial-event-macro-and-fn1 actuals))
-                      (stobjs-in (compute-stobj-flags formals t wrld))
+                      (stobjs-in (compute-stobj-flags formals t nil wrld))
 
 ; known-stobjs = t but, in this case it could just as well be
 ; known-stobjs = '(state) because we are constructing the primordial world
@@ -838,10 +838,9 @@
                        name-fn 'stobjs-out *error-triple-sig*
                        wrld))))))))
               (& (er hard 'primordial-event-macro-and-fn
-                     "The supplied form ~x0 was not of the required ~
-                      shape.  Every element of ~
-                      *initial-event-defmacros* must be of the form ~
-                      expected by this function.  Either change the ~
+                     "The supplied form ~x0 was not of the required shape.  ~
+                      Every element of *initial-event-defmacros* must be of ~
+                      the form expected by this function.  Either change the ~
                       event defmacro or modify this function."
                      form))))
 
@@ -1429,11 +1428,6 @@
 
          (er soft ctx
              "The empty string is not a legal package name for defpkg."
-             name))
-        ((not (standard-char-listp (coerce name 'list)))
-         (er soft ctx
-             "~x0 is not a legal package name for defpkg, which requires the ~
-              name to contain only standard characters."
              name))
         ((not (equal (string-upcase name) name))
          (er soft ctx
@@ -3132,7 +3126,7 @@
 (defconst *signature-keywords*
   '(:GUARD
     #+:non-standard-analysis :CLASSICALP
-    :STOBJS :FORMALS :GLOBAL-STOBJS :TRANSPARENT))
+    :STOBJS :DFS :FORMALS :GLOBAL-STOBJS :TRANSPARENT))
 
 (defun duplicate-key-in-keyword-value-listp (l)
   (declare (xargs :guard (keyword-value-listp l)))
@@ -3294,33 +3288,33 @@
           as the keyword alist, which however is not syntactically a ~
           keyword-value-listp because ~@2."))
     (mv-let
-     (msg fn formals val stobjs kwd-value-list)
+     (msg fn formals val stobjs dfs kwd-value-list)
      (case-match
        x
        (((fn . pretty-flags1) arrow val . kwd-value-list)
         (cond
          ((not (and (symbolp arrow) (equal (symbol-name arrow) "=>")))
-          (mv (msg *generic-bad-signature-string* x) nil nil nil nil nil))
+          (mv (msg *generic-bad-signature-string* x) nil nil nil nil nil nil))
          ((not (and (symbol-listp pretty-flags1)
-                    (no-duplicatesp-equal
-                     (collect-non-* pretty-flags1))))
+                    (no-duplicatesp-eq
+                     (collect-non-*-df pretty-flags1))))
           (mv (msg
                "The object ~x0 is not a legal signature because ~x1 is not ~
                 applied to a true-list of distinct symbols but to ~x2 instead."
                x fn pretty-flags1)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((not (or (symbolp val)
                    (and (consp val)
                         (eq (car val) 'mv)
                         (symbol-listp (cdr val))
-                        (no-duplicatesp-equal
-                         (collect-non-* (cdr val))))))
+                        (no-duplicatesp-eq
+                         (collect-non-*-df (cdr val))))))
           (mv (msg
                "The object ~x0 is not a legal signature because the result, ~
                 ... => ~x1, is not a symbol or an MV form containing distinct ~
                 symbols."
                x val)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((or (member-eq t pretty-flags1)
               (member-eq nil pretty-flags1)
               (eq val t)
@@ -3330,13 +3324,13 @@
                        (member-eq nil (cdr val)))))
           (mv (msg
                "The object ~x0 is not a legal signature because it mentions T ~
-                or NIL in places that must be filled by asterisks (*) or ~
-                single-threaded object names."
+                or NIL in places that must each be filled by an asterisk (*), ~
+                :DF, or a single-threaded object name."
                x)
-              nil nil nil nil nil))
-         ((not (subsetp-eq (collect-non-* (if (consp val)
-                                              (cdr val)
-                                            (list val)))
+              nil nil nil nil nil nil))
+         ((not (subsetp-eq (collect-non-*-df (if (consp val)
+                                                 (cdr val)
+                                               (list val)))
                            pretty-flags1))
           (mv (msg
                "The object ~x0 is not a legal signature because the result, ~
@@ -3344,32 +3338,34 @@
                 displayed among the inputs in ~x3."
                x
                val
-               (collect-non-* (set-difference-eq (if (consp val)
-                                                     (cdr val)
-                                                   (list val))
-                                                 pretty-flags1))
+               (collect-non-*-df (set-difference-eq (if (consp val)
+                                                        (cdr val)
+                                                      (list val))
+                                                    pretty-flags1))
                (cons fn pretty-flags1))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((not (keyword-value-listp kwd-value-list))
           (mv (msg
                bad-kwd-value-list-string
                x
                kwd-value-list
                (reason-for-non-keyword-value-listp kwd-value-list))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((duplicate-key-in-keyword-value-listp kwd-value-list)
           (mv (msg "The object ~x0 is not a legal signature because the ~
                     keyword ~x1 appears more than once."
                    x
                    (duplicate-key-in-keyword-value-listp kwd-value-list))
-              nil nil nil nil nil))
-         ((assoc-keyword :STOBJS kwd-value-list)
-          (mv (msg "The object ~x0 is not a legal signature.  The :STOBJS ~
-                    keyword is only legal for the older style of signature ~
-                    (but may not be necessary for the newer style that you ~
-                    are using); see :DOC signature."
-                   x)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
+         ((or (assoc-keyword :STOBJS kwd-value-list)
+              (assoc-keyword :DFS kwd-value-list))
+          (mv (msg "The object ~x0 is not a legal signature.  The ~
+                    ~#1~[:STOBJS~/:DFS~] keyword is only legal for the older ~
+                    style of signature (but may not be necessary for the ~
+                    newer style that you are using); see :DOC signature."
+                   x
+                   (if (assoc-keyword :STOBJS kwd-value-list) 0 1))
+              nil nil nil nil nil nil))
          ((and (assoc-keyword :GUARD kwd-value-list)
                (not (assoc-keyword :FORMALS kwd-value-list)))
           (mv (msg "The object ~x0 is not a legal signature.  The :GUARD ~
@@ -3377,7 +3373,7 @@
                     when the :FORMALS keyword is also supplied; see :DOC ~
                     signature."
                    x)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((or #+:non-standard-analysis
               (not (booleanp (cadr (assoc-keyword :CLASSICALP
                                                   kwd-value-list))))
@@ -3398,7 +3394,7 @@
                                                            kwd-value-list))))
                        :CLASSICALP
                      :TRANSPARENT))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          (t
           (let* ((formals-tail (assoc-keyword :FORMALS kwd-value-list))
                  (formals (if formals-tail
@@ -3411,7 +3407,8 @@
 ; Note:  Stobjs will contain duplicates iff formals does.  Stobjs will
 ; contain STATE iff formals does.
 
-                 (stobjs (collect-non-* pretty-flags1))
+                 (stobjs (collect-non-*-df pretty-flags1))
+                 (dfs (collect-by-position '(:df) pretty-flags1 formals))
                  (msg (and formals-tail
                            (formals-pretty-flags-mismatch-msg
                             formals pretty-flags1
@@ -3420,8 +3417,8 @@
             (cond (msg (mv (msg "The object ~x0 is not a legal signature ~
                                  because ~@1.  See :DOC signature."
                                 x msg)
-                           nil nil nil nil nil))
-                  (t (mv nil fn formals val stobjs kwd-value-list)))))))
+                           nil nil nil nil nil nil))
+                  (t (mv nil fn formals val stobjs dfs kwd-value-list)))))))
        ((fn formals val . kwd-value-list)
         (cond
          ((not (true-listp formals))
@@ -3429,26 +3426,26 @@
                "The object ~x0 is not a legal signature because its second ~
                 element, representing the formals, is not a true-list."
                x)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((not (keyword-value-listp kwd-value-list))
           (mv (msg
                bad-kwd-value-list-string
                x
                kwd-value-list
                (reason-for-non-keyword-value-listp kwd-value-list))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((duplicate-key-in-keyword-value-listp kwd-value-list)
           (mv (msg "The object ~x0 is not a legal signature because the keyword ~
                     ~x1 appears more than once."
                    x
                    (duplicate-key-in-keyword-value-listp kwd-value-list))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((assoc-keyword :FORMALS kwd-value-list)
           (mv (msg "The object ~x0 is not a legal signature.  The :FORMALS ~
                     keyword is only legal for the newer style of signature; ~
                     see :DOC signature."
                    x)
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          ((or #+:non-standard-analysis
               (not (booleanp (cadr (assoc-keyword :CLASSICALP
                                                   kwd-value-list))))
@@ -3469,15 +3466,19 @@
                                                            kwd-value-list))))
                        :CLASSICALP
                      :TRANSPARENT))
-              nil nil nil nil nil))
+              nil nil nil nil nil nil))
          (t
           (let* ((stobjs-tail (assoc-keyword :STOBJS kwd-value-list))
-                 (kwd-value-list (if stobjs-tail
-                                     (remove-keyword :STOBJS kwd-value-list)
-                                   kwd-value-list)))
+                 (dfs-tail (assoc-keyword :DFS kwd-value-list))
+                 (dfs (cadr dfs-tail))
+                 (kwd-value-list
+                  (if (or stobjs-tail dfs-tail)
+                      (remove-keyword :STOBJS
+                                      (remove-keyword :DFS kwd-value-list))
+                    kwd-value-list)))
             (cond ((not stobjs-tail)
                    (let ((stobjs (if (member-eq 'state formals) '(state) nil)))
-                     (mv nil fn formals val stobjs kwd-value-list)))
+                     (mv nil fn formals val stobjs dfs kwd-value-list)))
                   ((or (symbolp (cadr stobjs-tail))
                        (symbol-listp (cadr stobjs-tail)))
                    (let* ((stobjs0 (if (symbolp (cadr stobjs-tail))
@@ -3487,15 +3488,15 @@
                                            (not (member-eq 'state stobjs0)))
                                       (cons 'state stobjs0)
                                     stobjs0)))
-                     (mv nil fn formals val stobjs kwd-value-list)))
+                     (mv nil fn formals val stobjs dfs kwd-value-list)))
                   (t (mv (msg
                           "The object ~x0 is not a legal signature because ~
                            the proffered stobj names are ill-formed.  The ~
                            stobj names are expected to be either a single ~
                            symbol or a true list of symbols."
                           x)
-                         nil nil nil nil nil)))))))
-       (& (mv (msg *generic-bad-signature-string* x) nil nil nil nil nil)))
+                         nil nil nil nil nil nil)))))))
+       (& (mv (msg *generic-bad-signature-string* x) nil nil nil nil nil nil)))
      (cond
       (msg (er soft ctx "~@0" msg))
       ((not (subsetp-eq (evens kwd-value-list) *signature-keywords*))
@@ -3535,40 +3536,42 @@
                            (t (cdr val))))
                (stobjs-in (compute-stobj-flags formals
                                                stobjs
+                                               dfs
                                                wrld))
                (stobjs-out (compute-stobj-flags syms
                                                 stobjs
+                                                '(:df)
                                                 wrld)))
           (cond
-           ((not (subsetp (collect-non-x nil stobjs-out)
-                          (collect-non-x nil stobjs-in)))
+           ((not (subsetp (collect-non-nil-df stobjs-out)
+                          stobjs-in))
             (er soft ctx
                 "It is impossible to return single-threaded objects (such as ~
                  ~&0) that are not among the formals!  Thus, the input ~
                  signature ~x1 and the output signature ~x2 are incompatible."
-                (set-difference-eq (collect-non-x nil stobjs-out)
-                                   (collect-non-x nil stobjs-in))
+                (set-difference-eq (collect-non-nil-df stobjs-out)
+                                   stobjs-in)
                 formals
                 val))
-           ((not (no-duplicatesp (collect-non-x nil stobjs-out)))
+           ((not (no-duplicatesp (collect-non-nil-df stobjs-out)))
             (er soft ctx
                 "It is illegal to return the same single-threaded object in ~
                  more than one position of the output signature.  Thus, ~x0 ~
                  is illegal because ~&1 ~#1~[is~/are~] duplicated."
                 val
-                (duplicates (collect-non-x nil stobjs-out))))
+                (duplicates (collect-non-nil-df stobjs-out))))
            (t (er-let* ((wrld1 (chk-just-new-name fn
                                                   nil
                                                   (list* 'function
                                                          stobjs-in
                                                          stobjs-out)
                                                   nil ctx wrld state)))
-                       (value (list* (list fn
-                                           formals
-                                           stobjs-in
-                                           stobjs-out)
-                                     kwd-value-list
-                                     wrld1))))))))))))
+                (value (list* (list fn
+                                    formals
+                                    stobjs-in
+                                    stobjs-out)
+                              kwd-value-list
+                              wrld1))))))))))))
 
 (defun chk-signatures-rec (signatures ctx wrld state)
 
@@ -4162,18 +4165,21 @@
 ; Tests for this have been incorporated into community book
 ; books/make-event/embedded-defaxioms.lisp.
 
+(defconst *destructure-expansion-wrappers*
+  '(local skip-proofs
+          with-cbd
+          with-current-package
+          with-guard-checking-event
+          with-output
+          with-prover-step-limit
+          with-prover-time-limit))
+
 (defun destructure-expansion (form)
 
 ; WARNING: Keep this in sync with chk-embedded-event-form and elide-locals-rec.
 
   (declare (xargs :guard (true-listp form)))
-  (cond ((member-eq (car form) '(local skip-proofs
-                                       with-cbd
-                                       with-current-package
-                                       with-guard-checking-event
-                                       with-output
-                                       with-prover-step-limit
-                                       with-prover-time-limit))
+  (cond ((member-eq (car form) *destructure-expansion-wrappers*)
          (mv-let (wrappers base-form)
                  (destructure-expansion (car (last form)))
                  (mv (cons (butlast form 1) wrappers)
@@ -4404,7 +4410,9 @@
            (latches (and eq-len
                          (loop for x in stobjs-out
                                as val in vals
-                               when (and x (not (eq x 'state)))
+                               when (and x
+                                         (not (eq x :df))
+                                         (not (eq x 'state)))
                                collect (cons x val)))))
       (when eq-len
         (update-user-stobj-alist (put-assoc-eq-alist (user-stobj-alist state)
@@ -7739,6 +7747,14 @@
         (t ; optimize for common case
          lst)))
 
+(defun dfp-terms (stobjs-in formals)
+  (declare (xargs :guard (and (symbol-listp formals)
+                              (symbol-listp stobjs-in)
+                              (eql (length formals)
+                                   (length stobjs-in)))))
+  (map-predicate 'dfp
+                 (collect-by-position '(:df) stobjs-in formals)))
+
 (defun intro-udf-guards (insigs kwd-value-list-lst wrld-acc wrld ctx state)
 
 ; Insigs is a list of signatures, each in the internal form (list fn formals
@@ -7764,8 +7780,9 @@
               (fn (car insig))
               (formals (cadr insig))
               (stobjs-in (caddr insig))
-              (stobjs (collect-non-x nil stobjs-in))
-              (stobj-terms (stobj-recognizer-terms stobjs wrld)))
+              (stobjs (collect-non-nil-df stobjs-in))
+              (stobj-terms (stobj-recognizer-terms stobjs wrld))
+              (dfp-terms (dfp-terms stobjs-in formals)))
          (er-progn
           (cond (tguard (chk-free-vars fn formals tguard "guard for" ctx
                                        state))
@@ -7775,8 +7792,10 @@
            (cdr kwd-value-list-lst)
            (putprop-unless fn 'guard
                            (cond (tguard (conjoin (append stobj-terms
+                                                          dfp-terms
                                                           (list tguard))))
-                                 (t (conjoin stobj-terms)))
+                                 (t (conjoin (append stobj-terms
+                                                     dfp-terms))))
                            *t* wrld-acc)
            wrld ctx state)))))))
 
@@ -9475,37 +9494,6 @@
     `(state-global-let*
       ((current-package ,pkg set-current-package-state))
       ,form)))
-
-(defun substring-p (i1 s1 len i2 s2)
-
-; This predicate recognizes when the substring of s1 (with length len) starting
-; at s1 equals the substring of s2 starting at i2.
-
-  (declare (type string s1 s2)
-           (type (integer 0 *) i1 len i2)
-           (xargs :guard (and (<= i1 len)
-                              (= len (length s1))
-; There is at least as much room to increase i2 as there is to increase i1:
-                              (>= (- (length s2) i2)
-                                  (- len i1)))
-                  :measure (nfix (- len i1))))
-  (cond ((mbe :logic (not (and (natp i1)
-                               (natp len)
-                               (< i1 len)))
-              :exec (= i1 len))
-         t)
-        ((eql (the character (char s1 i1))
-              (the character (char s2 i2)))
-         (substring-p (1+ i1) s1 len (1+ i2) s2))
-        (t nil)))
-
-(defun string-suffixp (suffix string)
-  (declare (type string suffix string))
-  (let ((len-suffix (length suffix))
-        (len-string (length string)))
-    (and (<= len-suffix len-string)
-         (substring-p 0 suffix len-suffix
-                      (- len-string len-suffix) string))))
 
 (defun parse-book-name (dir x extension ctx state)
 
@@ -14483,23 +14471,28 @@
                                      ch state)))
              (t (princ$ ";;; Note: There are no declaim forms to print." ch state)))
 
+; The following would cause a guard violation if using fms with channel ch,
+; since the file-type of the channel ch is :object, not :character.  This issue
+; was ignored (perhaps not noticed) until work undertaken in July and August,
+; 2023, that upgraded the symbol-class of fms! to be :common-lisp-compliant.
+; With that change, books/system/check-system-guards.lisp failed to certify
+; because of that guard violation.  However, there was already a princ$ call
+; further below under #-acl2-loop-only, so following that precedent, we use
+; format here conditioned by #-acl2-loop-only.  Some day we may install a more
+; principle change.
+
+       #-acl2-loop-only
+       (progn (format
+               (get-output-stream-from-channel ch)
+               "~%;;; Printing ~s portcullis command~a followed by ~
+                book contents,~%;;; with make-event expansions."
+               (length portcullis-cmds)
+               (if (cdr portcullis-cmds) "s" ""))
+              state)
+
 ; We print a single progn for all top-level events in order to get maximum
 ; sharing with compact printing.
 
-       (mv-let
-        (erp val state)
-        (state-global-let*
-         ((fmt-hard-right-margin 10000 set-fmt-hard-right-margin)
-          (fmt-soft-right-margin 10000 set-fmt-soft-right-margin))
-         (pprogn
-          (fms ";;; Printing ~x0 portcullis command~#1~[~/s~] followed by ~
-                book contents,~%;;; with make-event expansions."
-               (list (cons #\0 (length portcullis-cmds))
-                     (cons #\1 portcullis-cmds))
-               ch state nil)
-          (value nil)))
-        (declare (ignore erp val))
-        state)
        (print-object$ (cons 'progn
                             (append portcullis-cmds
                                     (subst-by-position expansion-alist
@@ -14509,7 +14502,8 @@
        (newline ch state)
        #-acl2-loop-only
        (progn (when new-fns-exec
-                (princ$ ";;; *1* function definitions to compile:" ch state)
+                (princ ";;; *1* function definitions to compile:"
+                       (get-output-stream-from-channel ch))
 
 ; No newline is needed here, as compile-uncompiled-*1*-defuns uses
 ; print-object$, which starts by printing a newline.
@@ -15805,14 +15799,15 @@
 (defun maybe-write-bookdata (full-book-string full-book-name wrld ctx state)
 
 ; We are given a full-book-string and corresponding full-book-name, say for
-; foo.lisp.  Then when state global 'write-bookdata is non-nil, successful
-; certification of full-book-name will cause a file foo__bookdata.out to be
-; written.  That file will be of the form (full-book-name . kwd-values), where
-; kwd-values is a keyword-value-listp that associates keywords with lists as
-; follows.  In each case, only events in the world after including the book are
-; considered, hence not events that are merely local or events events within
-; other books, but including events from the portcullis (certification world)
-; for foo.lisp.  The keyword :books is associated with the list of
+; foo.lisp.  Then when state global 'write-bookdata is not :never, and either
+; it's also not nil or environment variable ACL2_WRITE_BOOKDATA is non-empty,
+; then certification of full-book-name will cause a file foo__bookdata.out to
+; be written.  That file will be of the form (full-book-name . kwd-values),
+; where kwd-values is a keyword-value-listp that associates keywords with lists
+; as follows.  In each case, only events in the world after including the book
+; are considered, hence not events that are merely local or events events
+; within other books, but including events from the portcullis (certification
+; world) for foo.lisp.  The keyword :books is associated with the list of
 ; full-book-names of included books.  Each other keyword is associated with an
 ; alist that associates each key, a package name, with a list of symbol-names
 ; for symbols in that package that are introduced for that keyword, as follows.
@@ -15826,29 +15821,40 @@
 ; :THEORIES - theory name introduced by deftheory
 ; :THMS     - theorem name introduced by defthm or defaxiom
 
-  (cond
-   ((null (f-get-global 'write-bookdata state))
-    state)
-   (t (let ((outfile (concatenate 'string
-                                  (remove-lisp-suffix full-book-string t)
-                                  "__bookdata.out")))
-        (mv-let
-         (channel state)
-         (open-output-channel outfile :object state)
-         (cond ((null channel)
-                (prog2$ (er hard ctx
-                            "Error in maybe-write-bookdata: Unable to open ~
-                             file ~x0 for output."
-                            outfile)
-                        state))
-               (t (pprogn
-                   (print-object$-fn (cons full-book-name
-                                           (bookdata-alist full-book-name
-                                                           wrld))
-                                     nil ; serialize-character
-                                     channel
-                                     state)
-                   (close-output-channel channel state)))))))))
+  (let ((write-bookdata (f-get-global 'write-bookdata state)))
+    (cond
+     ((eq write-bookdata :never)
+      state)
+     (t
+      (mv-let (erp val state)
+        (if write-bookdata
+            (value t)
+          (getenv! "ACL2_WRITE_BOOKDATA" state))
+        (assert$
+         (null erp)
+         (cond
+          (val
+           (let ((outfile (concatenate 'string
+                                       (remove-lisp-suffix full-book-string t)
+                                       "__bookdata.out")))
+             (mv-let
+               (channel state)
+               (open-output-channel outfile :object state)
+               (cond ((null channel)
+                      (prog2$ (er hard ctx
+                                  "Error in maybe-write-bookdata: Unable to ~
+                                  open file ~x0 for output."
+                                  outfile)
+                              state))
+                     (t (pprogn
+                         (print-object$-fn (cons full-book-name
+                                                 (bookdata-alist full-book-name
+                                                                 wrld))
+                                           nil ; serialize-character
+                                           channel
+                                           state)
+                         (close-output-channel channel state)))))))
+          (t state))))))))
 
 (defun fromto (i j)
   (declare (xargs :guard (and (rationalp i) (rationalp j))))
@@ -16236,6 +16242,14 @@
                                (t env-var)))))))))
             (t ; should be an integer value
              (cond
+
+; In ACL2(r), i.e., when #+non-standard-analysis, useless-runes-r/w is nil.
+; Therefore the first COND branch below can be ignored in that case.  We would
+; leave it there unconditionally anyhow, to avoid having an extra readtime
+; conditional, but Allegro CL warns otherwise when building ACL2: "Warning:
+; Type NULL is incompatible for numeric operation."
+
+              #-non-standard-analysis
               ((and (integerp useless-runes-r/w)
                     (not (zerop useless-runes-r/w))
                     (<= -100 useless-runes-r/w)
@@ -16520,7 +16534,7 @@
                                 (getenv! "ACL2_WRITE_EVENT_DATA" state))))
     (cond
      ((null write-event-data) (value nil))
-     (t (let ((filename (event-data-filename full-book-string)))
+     (t (let ((filename (event-data-filename full-book-string t)))
           (mv-let (channel state)
             (open-output-channel filename :object state)
             (cond ((null channel)
@@ -17644,6 +17658,22 @@
                                                                   (pathname-unix-to-os
                                                                    (cdr pair)
                                                                    state)))
+                                                           (when event-data-channel
+                                                             (let ((old
+                                                                    (pathname-unix-to-os
+                                                                     (event-data-filename
+                                                                      full-book-string
+                                                                      t)
+                                                                     state))
+                                                                   (new
+                                                                    (pathname-unix-to-os
+                                                                     (event-data-filename
+                                                                      full-book-string
+                                                                      nil)
+                                                                     state)))
+                                                               (when (probe-file new)
+                                                                 (delete-file new))
+                                                               (rename-file old new)))
                                                            (when
                                                                (and
                                                                 os-compiled-file
@@ -18085,9 +18115,9 @@
                                     ignored event-form))
                          (t state))
                         (let* ((stobjs-in
-                                (compute-stobj-flags formals nil wrld))
+                                (compute-stobj-flags formals nil nil wrld))
                                (stobjs-out
-                                (compute-stobj-flags bound-vars nil wrld))
+                                (compute-stobj-flags bound-vars nil nil wrld))
                                (wrld
                                 #+:non-standard-analysis
                                 (putprop
@@ -18253,8 +18283,8 @@
       (verify-guards ,@args)))
    (t
     `(make-event
-      (if (int= (default-verify-guards-eagerness (w state))
-                2)
+      (if (member (default-verify-guards-eagerness (w state))
+                  '(2 3))
           '(verify-guards ,@args)
         '(value-triple :skipped))
       :expansion? ; Don't store expansion if eagerness is 1 (the default).
@@ -18408,8 +18438,9 @@
                         (or skolem-name
                             (add-suffix name "-WITNESS")))
                        (stobjs (fetch-dcl-field :STOBJS dcls))
+                       (dfs (fetch-dcl-field :DFS dcls))
                        (skolem-call `(,skolem-name ,@args))
-                       (skolem-call (if stobjs
+                       (skolem-call (if (or stobjs dfs)
                                         `(non-exec ,skolem-call)
                                       skolem-call))
                        (defun-body
@@ -18467,6 +18498,8 @@
                                        t
                                        ,@(and stobjs
                                               `(:stobjs ,@stobjs))
+                                       ,@(and dfs
+                                              `(:dfs ,@dfs))
                                        ,@(and guard-p
                                               (mv-let (ign guard)
                                                 (dcls-guard-raw-from-def
@@ -18841,10 +18874,11 @@
      (cond ((and (consp field-descriptor)
                  (symbolp (car field-descriptor))
                  (keyword-value-listp (cdr field-descriptor))
-                 (member-equal (length field-descriptor) '(1 3 5 7))
+                 (member-equal (length field-descriptor) '(1 3 5 7 9))
                  (let ((keys (odds field-descriptor)))
                    (and (no-duplicatesp keys)
-                        (subsetp-eq keys '(:type :initially :resizable)))))
+                        (subsetp-eq keys '(:type :element-type :initially
+                                                 :resizable)))))
             (value nil))
            (t (er soft ctx
                   "The field descriptors of a single-threaded object ~
@@ -18860,6 +18894,8 @@
             (type (if (assoc-keyword :type (cdr field-descriptor))
                       (cadr (assoc-keyword :type (cdr field-descriptor)))
                     t))
+            (element-type (cadr (assoc-keyword :element-type
+                                               (cdr field-descriptor))))
             (initp (assoc-keyword :initially (cdr field-descriptor)))
             (init (if initp (cadr initp) nil))
             (resizable (if (assoc-keyword :resizable (cdr field-descriptor))
@@ -18900,16 +18936,28 @@
                       ~ The :type ~x0 for the ~x1 field of ~x2 is thus ~
                       illegal."
                      type0 field name))
+                ((and element-type
+                      (not (or (eq element-type t)
+                               (equal element-type etype))))
+                 (er soft ctx
+                     "When the :element-type keyword is specified for a stobj ~
+                      array field, it must be either T or the type specified ~
+                      for the elements of the array by its :type keyword.  ~
+                      The :element-type of ~x0 is thus illegal for :type ~x1."
+                     element-type type))
                 (t
                  (chk-stobj-field-etype etype type field name initp init t
                                         non-memoizable
                                         child-stobj-memoizable-error-string
                                         ctx wrld state)))))))
-        ((assoc-keyword :resizable (cdr field-descriptor))
+        ((or element-type
+             (assoc-keyword :resizable (cdr field-descriptor)))
          (er soft ctx
-             "The :resizable keyword is only legal for array types, hence is ~
-              illegal for the ~x0 field of ~x1."
-             field name))
+             "The ~#0~[:resizable~/:element-type~] keyword is only legal for ~
+              array types, hence is illegal for the ~x1 field of ~x2."
+             (if element-type 1 0)
+             field
+             name))
         ((and (consp type)
               (eq (car type) 'hash-table))
          (cond ((not (and (true-listp type)
@@ -18918,9 +18966,10 @@
                     "A hash-table type must be a true-list of length 2, 3, or ~
                      4.  The type ~x0 is thus illegal.  See :DOC defstobj.~%"
                     type))
-               (t (let ((test (stobj-hash-table-test type))
-                        (size (stobj-hash-table-init-size type))
-                        (etype (stobj-hash-table-element-type type)))
+               (t (let* ((type (fix-stobj-hash-table-type type wrld))
+                         (test (stobj-hash-table-test type))
+                         (size (stobj-hash-table-init-size type))
+                         (etype (stobj-hash-table-element-type type)))
                     (cond ((not (member-eq test '(eq eql equal hons-equal)))
                            (er soft ctx
                                "A hash-table test must be ~v0.  The test ~
@@ -18932,7 +18981,8 @@
                            (er soft ctx
                                "A hash-table type must specify the size (the ~
                                 optional second argument) as nil or a natural ~
-                                number  The type ~x0 is thus illegal.  See ~
+                                number, either directly or using a defined ~
+                                constant.  The type ~x0 is thus illegal.  See ~
                                 :DOC defstobj.~%"
                                type))
                           ((not (eq etype t))
@@ -18950,14 +19000,16 @@
                      interpreted as (STOBJ-TABLE) or (STOBJ-TABLE SIZE).  The ~
                      type ~x0 is thus illegal.~%"
                     type))
-               ((and (cdr type)
-                     (not (natp (cadr type))))
-                (er soft ctx
-                    "A stobj-table type of the form (STOBJ-TABLE SIZE) ~
-                     must specify SIZE as a natural number.  The type ~x0 ~
-                     is thus illegal.~%"
-                    type))
-               (t (value nil))))
+               (t (let ((type (fix-stobj-table-type type wrld)))
+                    (cond ((and (cdr type)
+                                (not (natp (cadr type))))
+                           (er soft ctx
+                               "A stobj-table type of the form (STOBJ-TABLE ~
+                                SIZE) must specify SIZE as a natural number, ~
+                                either directly or using a defined constant.  ~
+                                The type ~x0 is thus illegal.~%"
+                               type))
+                          (t (value nil)))))))
         (t (let* ((stobjp (stobjp type t wrld))
                   (type-term         ; used only when (not stobjp)
                    (and (not stobjp) ; optimization
@@ -19184,10 +19236,11 @@
    (t
 
 ; An element of field-descriptors (i.e., of ftemps) is either a symbolic field
-; name, field, or else of the form (field :type type :initially val), where
-; either or both of the keyword fields can be omitted.  Val must be an evg,
-; i.e., an unquoted constant like t, nil, 0 or undef (the latter meaning the
-; symbol 'undef).  :Type defaults to the unrestricted type t and :initially
+; name, field, or else of the form (field :type type :element-type element-type
+; :initially val), where any of the keyword fields can be omitted and
+; :element-type is legal only when :type specifies an array.  Val must be an
+; evg, i.e., an unquoted constant like t, nil, 0 or undef (the latter meaning
+; the symbol 'undef).  :Type defaults to the unrestricted type t and :initially
 ; defaults to nil.  Type is either a primitive type, as recognized by
 ; translate-declaration-to-guard-gen, or a stobj name, or else is of the form
 ; (array ptype (n)), where ptype is a primitive type or stobj name and n is an
@@ -19911,8 +19964,10 @@
           ((and (consp type)
                 (eq (car type) 'array))
            (let* ((etype (cadr type))
-                  (stobj-flg (and (stobjp etype t wrld)
-                                  etype)))
+                  (stobj-flg (if (eq etype 'double-float)
+                                 :df
+                               (and (stobjp etype t wrld)
+                                    etype))))
              (putprop
               length-fn 'stobjs-in (list name)
               (putprop
@@ -19930,8 +19985,10 @@
           ((and (consp type)
                 (member-eq (car type) '(hash-table stobj-table)))
            (let* ((etype (stobj-hash-table-element-type type))
-                  (stobj-flg (and (stobjp etype t wrld)
-                                  etype)))
+                  (stobj-flg (if (eq etype 'double-float)
+                                 :df
+                               (and (stobjp etype t wrld)
+                                    etype))))
              (putprop
               init-fn 'stobjs-in (list nil nil nil name)
               (putprop
@@ -19980,8 +20037,10 @@
                                     (list *stobj-table-stobj*)
                                     wrld))))))))))))))))
           (t
-           (let ((stobj-flg (and (stobjp type t wrld)
-                                 type)))
+           (let ((stobj-flg (if (eq type 'double-float)
+                                :df
+                              (and (stobjp type t wrld)
+                                   type))))
              (putprop
               acc-fn 'stobjs-in (list name)
               (putprop-unless
@@ -22486,6 +22545,7 @@
                    (stobjs-out (assert$ exec (stobjs-out exec wrld)))
                    (child (and (consp stobjs-out)
                                (null (cdr stobjs-out))
+                               (not (eq (car stobjs-out) :df))
                                (car stobjs-out)))
                    (name (access absstobj-method method :name)))
               (cond
@@ -22910,10 +22970,6 @@
                   (defabsstobj-logic-subst (cdr methods))))))
 
 (defun chk-defabsstobj-guard (method ctx wrld state-vars)
-
-; Warning: Keep this call of translate in sync with the call of
-; translate-term-lst in chk-acceptable-defuns1.
-
   (mv-let (ctx msg)
           (translate-cmp (access absstobj-method method
                                  :guard-post)
@@ -23946,12 +24002,25 @@
       `(when ,gcond ,form)
     form))
 
+(defun evisceration-stobj-mark-simple (name)
+
+; Warning: Keep this in sync with evisceration-stobj-mark.
+
+; This version of evisceration-stobj-mark assues that name is a stobj name and
+; not :DF.
+
+  (cond
+   ((eq name 'STATE)
+    *evisceration-state-mark*)
+   (t
+    (cons *evisceration-mark* (stobj-print-name name)))))
+
 (defun stobj-evisceration-alist (user-stobj-alist state)
   (cond ((endp user-stobj-alist)
          (list (cons (coerce-state-to-object state)
                      *evisceration-state-mark*)))
         (t (cons (cons (cdar user-stobj-alist)
-                       (evisceration-stobj-mark (caar user-stobj-alist) nil))
+                       (evisceration-stobj-mark-simple (caar user-stobj-alist)))
                  (stobj-evisceration-alist (cdr user-stobj-alist) state)))))
 
 (defun trace-evisceration-alist (state)
@@ -24356,6 +24425,7 @@
          (fn (car def))
          (cond-tail (assoc-keyword :cond trace-options))
          (cond (cadr cond-tail))
+         (cond (oneify cond nil (w *the-live-state*) nil))
          (hide-tail (assoc-keyword :hide trace-options))
          (hide (or (null hide-tail) ; default is t
                    (cadr hide-tail)))
@@ -24363,10 +24433,12 @@
                     (list 'cons (kwote fn) 'arglist)))
          (entry-msgp (trace$-value-msgp entry :entry))
          (entry (if entry-msgp (cadr entry) entry))
+         (entry (oneify entry nil (w *the-live-state*) nil))
          (exit  (or (cadr (assoc-keyword :exit  trace-options))
                     (list 'cons (kwote fn) 'values)))
          (exit-msgp (trace$-value-msgp exit :exit))
          (exit (if exit-msgp (cadr exit) exit))
+         (exit (oneify exit nil (w *the-live-state*) nil))
          (notinline-tail (assoc-keyword :notinline trace-options))
          (notinline-nil (and notinline-tail
                              (null (cadr notinline-tail))))
@@ -25334,8 +25406,8 @@
 
 (defun parse-defexec-dcls-1 (alist guard guard-p hints hints-p measure
                                    measure-p ruler-extenders ruler-extenders-p
-                                   wfrel wfrel-p stobjs stobjs-p exec-xargs
-                                   exec-test exec-default acc)
+                                   wfrel wfrel-p stobjs stobjs-p dfs dfs-p
+                                   exec-xargs exec-test exec-default acc)
 
 ; We return (mv nil declare-form ...) as suggested in the first (endp) case
 ; below, where exec-xargs has been removed from alist in creating the declare
@@ -25352,6 +25424,7 @@
         ruler-extenders ruler-extenders-p
         wfrel wfrel-p
         stobjs stobjs-p
+        dfs dfs-p
         exec-xargs exec-test exec-default))
    (t
     (let* ((decl (car alist))
@@ -25362,68 +25435,75 @@
         (cond
          ((keyword-value-listp x)
           (mv-let
-           (erp guard guard-p)
-           (defexec-extract-key x :GUARD guard guard-p)
-           (cond
-            (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil nil nil
-                     nil nil nil))
-            (t
-             (mv-let
-              (erp hints hints-p)
-              (defexec-extract-key x :HINTS hints hints-p)
-              (cond
-               (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil nil
-                        nil nil nil nil))
-               (t
-                (mv-let
-                 (erp measure measure-p)
-                 (defexec-extract-key x :MEASURE measure measure-p)
-                 (cond
-                  (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil
-                           nil nil nil nil nil))
-                  (t
-                   (mv-let
-                    (erp ruler-extenders ruler-extenders-p)
-                    (defexec-extract-key x :RULER-EXTENDERS ruler-extenders
-                      ruler-extenders-p)
+            (erp guard guard-p)
+            (defexec-extract-key x :GUARD guard guard-p)
+            (cond
+             (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil nil nil
+                      nil nil nil nil nil))
+             (t
+              (mv-let
+                (erp hints hints-p)
+                (defexec-extract-key x :HINTS hints hints-p)
+                (cond
+                 (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil nil
+                          nil nil nil nil nil nil))
+                 (t
+                  (mv-let
+                    (erp measure measure-p)
+                    (defexec-extract-key x :MEASURE measure measure-p)
                     (cond
-                     (erp (mv erp nil nil nil nil nil nil nil nil nil nil
-                              nil nil nil nil nil nil))
+                     (erp (mv erp nil nil nil nil nil nil nil nil nil nil nil
+                              nil nil nil nil nil nil nil))
                      (t
                       (mv-let
-                       (erp wfrel wfrel-p)
-                       (defexec-extract-key x :WELL-FOUNDED-RELATION
-                         wfrel wfrel-p)
-                       (cond
-                        (erp (mv erp nil nil nil nil nil nil nil nil nil
-                                 nil nil nil nil nil nil nil))
-                        (t
-                         (mv-let
-                          (erp stobjs stobjs-p)
-                          (defexec-extract-key x :STOBJS stobjs
-                            stobjs-p)
-                          (cond
-                           (erp (mv erp nil nil nil nil nil nil nil nil
-                                    nil nil nil nil nil nil nil nil))
-                           (t (parse-defexec-dcls-1
-                               (cdr alist)
-                               guard guard-p
-                               hints hints-p
-                               measure measure-p
-                               ruler-extenders ruler-extenders-p
-                               wfrel wfrel-p
-                               stobjs stobjs-p
-                               exec-xargs exec-test exec-default
-                               (cons decl acc)))))))))))))))))))))
+                        (erp ruler-extenders ruler-extenders-p)
+                        (defexec-extract-key x :RULER-EXTENDERS ruler-extenders
+                          ruler-extenders-p)
+                        (cond
+                         (erp (mv erp nil nil nil nil nil nil nil nil nil nil
+                                  nil nil nil nil nil nil nil nil))
+                         (t
+                          (mv-let
+                            (erp wfrel wfrel-p)
+                            (defexec-extract-key x :WELL-FOUNDED-RELATION
+                              wfrel wfrel-p)
+                            (cond
+                             (erp (mv erp nil nil nil nil nil nil nil nil nil
+                                      nil nil nil nil nil nil nil nil nil))
+                             (t
+                              (mv-let (erp stobjs stobjs-p)
+                                (defexec-extract-key x :STOBJS stobjs stobjs-p)
+                                (cond
+                                 (erp (mv erp nil nil nil nil nil nil nil nil
+                                          nil nil nil nil nil nil nil nil nil
+                                          nil))
+                                 (t (mv-let (erp dfs dfs-p)
+                                      (defexec-extract-key x :DFS dfs dfs-p)
+                                      (cond
+                                       (erp (mv erp nil nil nil nil nil nil nil
+                                                nil nil nil nil nil nil nil nil
+                                                nil nil nil))
+                                       (t
+                                        (parse-defexec-dcls-1
+                                         (cdr alist)
+                                         guard guard-p
+                                         hints hints-p
+                                         measure measure-p
+                                         ruler-extenders ruler-extenders-p
+                                         wfrel wfrel-p
+                                         stobjs stobjs-p
+                                         dfs dfs-p
+                                         exec-xargs exec-test exec-default
+                                         (cons decl acc))))))))))))))))))))))))
          (t (mv "we found (XARGS . x) where x is not a keyword-value-listp"
-                nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil
-                nil))))
+                nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil
+                nil nil))))
        ((eq sym 'exec-xargs)
         (cond
          ((or exec-xargs exec-test exec-default)
           (mv "more than one EXEC-XARGS has been specified"
               nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil
-              nil))
+              nil nil nil))
          ((and (keyword-value-listp x) x)
           (let* ((exec-test (cadr (assoc-keyword :test x)))
                  (x (if exec-test (remove-keyword :test x) x))
@@ -25436,13 +25516,15 @@
                                   ruler-extenders ruler-extenders-p
                                   wfrel wfrel-p
                                   stobjs stobjs-p
+                                  dfs dfs-p
                                   x
                                   exec-test
                                   exec-default
                                   acc)))
          (t (mv "we found declaration (EXEC-XARGS . x) where x is not a ~
                    non-empty keyword-value-listp"
-                nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil))))
+                nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil
+                nil nil))))
        (t (parse-defexec-dcls-1 (cdr alist)
                                 guard guard-p
                                 hints hints-p
@@ -25450,6 +25532,7 @@
                                 ruler-extenders ruler-extenders-p
                                 wfrel wfrel-p
                                 stobjs stobjs-p
+                                dfs dfs-p
                                 x
                                 exec-test
                                 exec-default
@@ -25459,7 +25542,8 @@
                                   measure measure-p
                                   ruler-extenders ruler-extenders-p
                                   wfrel wfrel-p
-                                  stobjs stobjs-p)
+                                  stobjs stobjs-p
+                                  dfs dfs-p)
   (declare (xargs :guard (keyword-value-listp exec-xargs)))
 
 ; Update exec-xargs to incorporate the hints, measure, and stobjs extracted
@@ -25481,6 +25565,9 @@
               x))
          (x (if (and stobjs-p (not (assoc-keyword :STOBJS exec-xargs)))
                 (list* :STOBJS stobjs x)
+              x))
+         (x (if (and dfs-p (not (assoc-keyword :DFS exec-xargs)))
+                (list* :DFS dfs x)
               x)))
     x))
 
@@ -25491,6 +25578,7 @@
                                             ruler-extenders ruler-extenders-p
                                             wfrel wfrel-p
                                             stobjs stobjs-p
+                                            dfs dfs-p
                                             exec-xargs exec-test exec-default)
 
 ; We return the following values.  Note that input guard-p is true if we have
@@ -25522,7 +25610,7 @@
           guard
           (fix-exec-xargs exec-xargs hints hints-p measure measure-p
                           ruler-extenders ruler-extenders-p wfrel wfrel-p
-                          stobjs stobjs-p)
+                          stobjs stobjs-p dfs dfs-p)
           (or exec-test guard)
           exec-default))))
    (t (let ((x (car dcls-and-strings)))
@@ -25531,25 +25619,25 @@
           (parse-defexec-dcls (cdr dcls-and-strings) (cons x final) guard
                               guard-p hints hints-p measure measure-p
                               ruler-extenders ruler-extenders-p wfrel wfrel-p
-                              stobjs stobjs-p exec-xargs exec-test
+                              stobjs stobjs-p dfs dfs-p exec-xargs exec-test
                               exec-default))
          ((and (consp x)
                (eq (car x) 'declare)
                (symbol-alistp (cdr x)))
           (mv-let (erp decl guard guard-p hints hints-p measure measure-p
                        ruler-extenders ruler-extenders-p wfrel wfrel-p stobjs
-                       stobjs-p exec-xargs exec-test exec-default)
+                       stobjs-p dfs dfs-p exec-xargs exec-test exec-default)
             (parse-defexec-dcls-1 (cdr x) guard guard-p hints hints-p measure
                                   measure-p ruler-extenders ruler-extenders-p
-                                  wfrel wfrel-p stobjs stobjs-p exec-xargs
-                                  exec-test exec-default nil)
+                                  wfrel wfrel-p stobjs stobjs-p dfs dfs-p
+                                  exec-xargs exec-test exec-default nil)
             (cond
              (erp (mv erp nil nil nil nil nil))
              (t (parse-defexec-dcls (cdr dcls-and-strings) (cons decl final)
                                     guard guard-p hints hints-p measure
                                     measure-p ruler-extenders ruler-extenders-p
-                                    wfrel wfrel-p stobjs stobjs-p exec-xargs
-                                    exec-test exec-default)))))
+                                    wfrel wfrel-p stobjs stobjs-p dfs dfs-p
+                                    exec-xargs exec-test exec-default)))))
          (t
           (mv (msg "the form ~x0 is neither a string nor a form (declare . x) ~
                     where x is a symbol-alistp"
@@ -25585,7 +25673,7 @@
        (t (mv-let (erp final-dcls-and-strings guard exec-xargs exec-test
                        exec-default)
             (parse-defexec-dcls dcls-and-strings nil nil nil nil nil nil nil
-                                nil nil nil nil nil nil nil nil nil)
+                                nil nil nil nil nil nil nil nil nil nil nil)
             (cond
              (erp
               `(er soft 'defexec
@@ -26619,10 +26707,9 @@
           (info-for-forward-chaining-rules
            (getpropc name 'forward-chaining-rules nil wrld)
            t ens wrld)
-          (let ((elim-rule (getpropc name 'eliminate-destructors-rule nil wrld)))
-            (and elim-rule
-                 (info-for-eliminate-destructors-rule
-                  elim-rule t ens wrld)))
+          (info-for-eliminate-destructors-rules
+           (getpropc name 'eliminate-destructors-rules nil wrld)
+           t ens wrld)
           (info-for-induction-rules
            (getpropc name 'induction-rules nil wrld)
            t ens wrld))
@@ -28700,7 +28787,7 @@
                                      (default-hints wrld)
                                      ctx wrld state))
                   (:INSTRUCTIONS
-                   (translate-instructions name-tree val ctx wrld state))
+                   (translate-instructions val ctx state))
                   (:OTF-FLG
                    (value val))
                   (:ATTACH
@@ -31494,7 +31581,7 @@
                        (alistp fmt-control-alist)
                        (alist-keys-subsetp fmt-control-alist
                                            *fmt-control-defaults-keys*)))
-           (type (signed-byte 30) col))
+           (type #.*fixnat-type* col))
   (channel-to-string
    (fmt1 str alist col chan-do-not-use-elsewhere state evisc-tuple)
    chan-do-not-use-elsewhere col fmt-control-alist))
@@ -31510,7 +31597,7 @@
                        (alistp fmt-control-alist)
                        (alist-keys-subsetp fmt-control-alist
                                            *fmt-control-defaults-keys*)))
-           (type (signed-byte 30) col))
+           (type #.*fixnat-type* col))
   (channel-to-string
    (fmt1! str alist col chan-do-not-use-elsewhere state evisc-tuple)
    chan-do-not-use-elsewhere col fmt-control-alist))
@@ -31834,107 +31921,6 @@
                   (ext-anc-attachments-valid-p-1 (siblings f wrld)
                                                  alist
                                                  wrld))))))))
-
-; Start definitions related to defun-inline.
-
-; (defconst *inline-suffix* "$INLINE") ; moved above ec-call1-raw
-(defconst *inline-suffix-len-minus-1* (1- (length *inline-suffix*)))
-(defconst *notinline-suffix* "$NOTINLINE")
-(defconst *notinline-suffix-len-minus-1* (1- (length *notinline-suffix*)))
-(defconst *non-stobj-var-root* (coerce (symbol-name 'non-stobj-var) 'list))
-
-(defun defun-inline-form (name formals lst defun-type suffix)
-
-; Defun-type is DEFUN or DEFUND; suffix is *inline-suffix* or
-; *notinline-suffix*.
-
-  (declare (xargs :mode :program
-                  :guard (and (symbolp name)
-                              (symbol-listp formals)
-                              lst
-                              (<= (number-of-strings (butlast lst 1))
-                                  1)
-                              (or (eq defun-type 'defun)
-                                  (eq defun-type 'defund))
-                              (or (equal suffix *inline-suffix*)
-                                  (equal suffix *notinline-suffix*)))))
-  (let* ((name$inline (add-suffix name suffix))
-         (dcls-and-strings (butlast lst 1))
-         (strings (get-string dcls-and-strings))
-         (dcls (remove-strings dcls-and-strings))
-         (body (car (last lst)))
-         (macro-formals formals))
-    `(progn (defmacro ,name ,macro-formals
-              ,@strings
-              (list ',name$inline ,@macro-formals))
-            (add-macro-fn ,name ,name$inline)
-            (,defun-type ,name$inline ,formals ,@dcls ,body))))
-
-(defmacro defun-inline (name formals &rest lst)
-
-; Here is an explanation for why we insist on specific suffices for inlined and
-; notinlined functions, following up on remark (2) in :doc defun-inline.
-
-; We insist on a specific suffix for inlined functions, *inline-suffix*,
-; because Common Lisp provides no way to undo (declaim (inline foo)).  To see
-; why such undoing is relevant, suppose that (defun-inline foo (x) ...) simply
-; expanded to:
-
-;   (progn (declaim (inline foo))
-;          (defun foo ...))
-
-; Now consider this example:
-
-;   (encapsulate
-;     ()
-;     (local (defun-inline foo (x) x))
-;     ...)
-;
-;   (defun foo (x) (cons x x))
-
-; When that encapsulate runs, the form (declaim (inline foo)) would be
-; generated.  Since there is no way to undo that declaim before starting the
-; second pass of the encapsulate, the global (final) definition of foo would
-; also be an inline definition, perhaps contrary to intent.  A similar problem
-; occurs if (defun-inline foo ...) is in a locally included book.
-
-; (One might ask: why not undo the (declaim (inline foo)) with (declaim
-; (notinline foo))?  That also seems unacceptable, because perhaps it would be
-; advantageous for the Lisp compiler to inline some definitions of foo and not
-; others.  We would really like something like (declaim
-; (back-to-no-claims-about-inline foo)), but that's not available.)
-
-; By insisting on a syntactic naming convention for inlined functions --
-; namely, their names end in *inline-suffix* (i.e., in "$INLINE") -- we
-; avoid this undoing problem.  That is: we don't mind that we can't undo
-; the declaim, because every function of that name will be inlined.
-
-; Implementor hint for "(5) Obscure Remark" in :DOC defun-inline: Search for
-; ";;; Declaim forms:" in write-expansion-file, and notice the printing just
-; below it of a readtime conditional for the host Lisp, so that declaim forms
-; are restricted to that Lisp.  This mechanism was probably put into place so
-; that declaiming for GCL didn't result in declaiming for Allegro CL, or
-; something along those lines.
-
-  (defun-inline-form name formals lst 'defun *inline-suffix*))
-
-(defmacro defund-inline (name formals &rest lst)
-
-; Warning: Keep this in sync with defun-inline.
-
-  (defun-inline-form name formals lst 'defund *inline-suffix*))
-
-(defmacro defun-notinline (name formals &rest lst)
-
-; Warning: Keep this in sync with defund-notinline.
-
-  (defun-inline-form name formals lst 'defun *notinline-suffix*))
-
-(defmacro defund-notinline (name formals &rest lst)
-
-; Warning: Keep this in sync with defun-inline.
-
-  (defun-inline-form name formals lst 'defund *notinline-suffix*))
 
 (defun regenerate-tau-database-fn0 (user-auto-modep auto-modep ens trips
                                                      ctx wrld state)
@@ -32461,9 +32447,9 @@
 
 ; Since we don't expect many direct calls of magic-ev-fncall and we have
 ; covered most cases above, we leave it up to the user to investigate which
-; part of ev-fncall-w-guard fails.  The condition (all-nils stobjs-in) from
-; ev-fncall-w-guard1 is automatically met here, since stobjs could not be put
-; into the list, args.
+; part of ev-fncall-w-guard fails.  The condition (all-nils-or-dfs stobjs-in)
+; from ev-fncall-w-guard1 is automatically met here, since stobjs could not be
+; put into the list, args.
 
                     (msg "even though the call of ~x0 is well-formed, it ~
                           fails to satisfy ~x1"
@@ -33099,6 +33085,138 @@
                      'make-event-save-event-data
                    'make-event))))
 
+(defun trans*-fn1 (iter transp quiet make-event-p form ctx wrld state)
+
+; This function performs one iteration of trans*, returning an error triple
+; whose value, in the non-error case, is (cons flg val), where val is the
+; result of expanding or translating, and flg is t in the case of expanding,
+; else nil.  The error case includes the case that form is not a call of
+; make-event or a macro and transp is nil.  The non-error result is printed if
+; and only if quiet is non-nil.  The caller is responsible for deciding whether
+; to continue iterating.
+
+  (cond
+   ((and (consp form)
+         (member-eq (car form) *destructure-expansion-wrappers*))
+    (pprogn
+     (cond
+      (quiet state)
+      (t (fms "Iteration ~x0 is dropping the ~x1 wrapper:~|~x2~|----------~|"
+              (list (cons #\0 iter)
+                    (cons #\1 (car form))
+                    (cons #\2 (car (last form))))
+              (standard-co state) state nil)))
+     (value (cons t (car (last form))))))
+   (t
+    (let* ((make-event-case (and make-event-p
+                                 (consp form)
+                                 (eq (car form) 'make-event)
+                                 (consp (cdr form))
+                                 (keyword-value-listp (cddr form))))
+           (macrop (and (not make-event-case) ; optmimzation
+                        (consp form)
+                        (symbolp (car form))
+                        (getpropc (car form) 'macro-body))))
+      (er-let* ((next
+                 (cond
+                  (make-event-case
+                   (er-let* ((expansion0/new-kpa/new-ttags-seen
+                              (revert-world-on-error
+                               (protected-eval (cadr form)
+                                               (cadr (assoc-eq :on-behalf-of
+                                                               (cddr form)))
+                                               ctx state t))))
+                     (value (car expansion0/new-kpa/new-ttags-seen))))
+                  (macrop (macroexpand1 form ctx state))
+                  (transp (translate form
+                                     t   ; stobjs-out
+                                     nil ; logic-modep [don't care]
+                                     t   ; known-stobjs
+                                     ctx wrld state))
+                  (t (silent-error state)))))
+        (pprogn
+         (cond
+          (quiet state)
+          (t (fms "Iteration ~x0 produces (by ~#1~[expansion~/make-event ~
+                   expansion~/translation~]):~|~x2~|----------~|"
+                  (list (cons #\0 iter)
+                        (cons #\1 (if macrop 0 (if make-event-case 1 2)))
+                        (cons #\2 next))
+                  (standard-co state) state nil)))
+         (value (cons (or make-event-case macrop) next))))))))
+
+(defun trans*-fn-iter (iter bound transp quiet make-event-p names-fal
+                            form
+                            ctx wrld state)
+  (declare (xargs :guard (and (posp iter)
+                              (or (eq bound t)
+                                  (posp bound)))))
+  (cond
+   ((or (and (not (eq bound t))
+             (> iter bound))
+        (and (consp form)
+             (not (and make-event-p
+                       (eq (car form) 'make-event)))
+             (not (member-eq (car form) *destructure-expansion-wrappers*))
+             (hons-get (car form) names-fal)))
+    (value (if quiet form :invisible)))
+   (t (mv-let (erp flg/next state)
+        (trans*-fn1 iter transp quiet make-event-p form ctx wrld state)
+        (let ((flg (car flg/next))
+              (next (cdr flg/next)))
+          (cond
+           (erp (value (if quiet form :invisible)))
+           ((and (eq (car form) 'make-event)
+                 (and (consp next)
+                      (eq (car next) :or)))
+            (value (if quiet next :invisible)))
+           ((not flg)
+            (value (if quiet next :invisible)))
+           (t (trans*-fn-iter (1+ iter) bound transp quiet make-event-p names-fal
+                              next
+                              ctx wrld state))))))))
+
+(defun trans*-fn (bound form make-event-p ctx state)
+  (mv-let (reps0 quiet)
+    (cond ((consp bound)
+           (cond ((cdr bound)
+                  (mv :error nil))
+                 (t (mv (car bound) t))))
+          (t (mv bound nil)))
+    (mv-let (reps transp)
+      (cond ((integerp reps0)
+             (cond ((< reps0 0)
+                    (mv (- reps0) nil))
+                   ((> reps0 0)
+                    (mv reps0 t))
+                   (t (mv :error nil))))
+            ((eq reps0 nil)
+             (mv t nil))
+            ((eq reps0 t)
+             (mv t t))
+            (t (mv :error nil)))
+      (cond ((eq reps :error)
+             (er soft ctx
+                 "Illegal first argument for trans*, ~x0.  See :DOC trans*."
+                 bound))
+            ((and (consp form)
+                  (not (and make-event-p
+                            (eq (car form) 'make-event)))
+                  (not (member-eq (car form) *destructure-expansion-wrappers*))
+                  (hons-get (car form) *syms-not-callable-in-code-fal*))
+             (er soft ctx
+                 "Nothing to do: The input form is already the final result."))
+            (t (trans*-fn-iter 1 reps transp quiet make-event-p
+                               *syms-not-callable-in-code-fal*
+                               form
+                               ctx (w state) state))))))
+
+(defmacro trans* (bound form)
+  `(trans*-fn ,bound ,form t 'trans* state))
+
+(defmacro trans*- (bound form)
+  `(trans*-fn ,bound ,form nil 'trans*- state))
+
 (defun get-check-invariant-risk (state)
   (let ((pair (assoc-eq :check-invariant-risk
                         (table-alist 'acl2-defaults-table (w state))))
@@ -33439,7 +33557,9 @@
     (let* ((stobjs-out (car stobjs-out/replaced-val))
            (replaced-val (cdr stobjs-out/replaced-val))
            (error-triple-p (equal stobjs-out *error-triple-sig*))
-           (val0 (cond (error-triple-p
+           (error-triple-p+ (or error-triple-p
+                                (equal stobjs-out *error-triple-df-sig*)))
+           (val0 (cond (error-triple-p+
                         (cadr replaced-val))
                        ((cdr stobjs-out)
                         (car replaced-val))
@@ -33449,37 +33569,51 @@
        ((not (or (eq stobjs-out0 :auto)
                  (equal stobjs-out stobjs-out0)
                  (and (equal stobjs-out0 '(nil))
-                      (equal stobjs-out *error-triple-sig*))))
+                      error-triple-p)))
         (flet ((output-msg (stobjs-out)
                            (cond
                             ((equal stobjs-out '(nil))
-                             "a single (non-stobj) value")
+                             "an ordinary (non-stobj, non-df) value")
                             ((null (cdr stobjs-out))
-                             (msg "a single stobj value, ~x0"
-                                  (car stobjs-out)))
+                             (cond ((eq (car stobjs-out) :df)
+                                    "a single :DF value")
+                                   (t
+                                    (msg "a single stobj value, ~x0"
+                                         (car stobjs-out)))))
                             (t
                              (msg "multiple values of shape ~x0"
                                   (cons 'mv stobjs-out))))))
           (er soft ctx
               "Expected ~@0, but got ~@1.~@2"
               (output-msg stobjs-out0)
-              (output-msg stobjs-out)
+              (if (and (equal stobjs-out0 '(nil))
+                       (= (length stobjs-out) 3)
+                       (eq (caddr stobjs-out) 'state))
+                  (output-msg (list (cadr stobjs-out)))
+                (output-msg stobjs-out))
 
-; Report modified stobjs even if stobjs-out is not :auto, since warnings may
-; have been turned off and also to emphasize that the changes occurred in spite
-; of there being an error.
+; Report modified user stobjs even if stobjs-out is not :auto, since warnings
+; may have been turned off and also to emphasize that the changes occurred in
+; spite of there being an error.
 
-              (let ((stobjs (remove nil stobjs-out)))
+              (let ((stobjs (if (equal stobjs-out0 '(nil))
+
+; In this common case, we avoid reporting that state may have changed during
+; evaluation of form, because we know it hasn't!
+
+                                nil
+                              (collect-non-nil-df stobjs-out))))
                 (cond ((null stobjs) "")
                       (t (msg "  Note that in spite of the error, evaluation ~
                                may have modified the stobj~#0~[~/s~] ~&0."
                               stobjs)))))))
-       ((and error-triple-p (car replaced-val))
+       ((and error-triple-p+ (car replaced-val))
         (er soft ctx
-            "Evaluation failed: Result was an error triple with non-nil error ~
-             component, ~x0.  See :DOC error-triple."
+            "Evaluation failed: Result was of the form (mv t _ state).  See ~
+             :DOC error-triple."
             (car replaced-val)))
-       (check (cond ((car stobjs-out)
+       (check (cond ((and (car stobjs-out)
+                          (not (eq (car stobjs-out) :df)))
                      (er soft ctx
                          "Ill-formed assertion: The~@0 value returned is ~@1."
                          (if (cdr stobjs-out) " first" "")
@@ -33496,7 +33630,8 @@
                      (er soft ctx
                          "Assertion failed on form:~%~x0~|"
                          form))))
-       ((car stobjs-out)
+       ((and (car stobjs-out)
+             (not (eq (car stobjs-out) :df)))
         (value (car stobjs-out)))
        (t (value val0))))))
 
@@ -34086,24 +34221,14 @@
                     ,@(and stobjs
                            `((declare (xargs :stobjs ,@stobjs))))
 
-; We only need non-exec when there is at least one stobj among fn-formals.
+; We need non-exec when there is at least one stobj or df among fn-formals.
 ; Since calls of fn-limit-stable cannot be executed, it seems harmless to use
-; non-exec in all cases; but we keep this simpler in the non-stobj case by
-; avoiding non-exec.
+; non-exec in all cases.  We put non-exec only where it is needed rather than
+; around the entire body, so as to obtain the expected output signature.
 
-; A separate issue is whether to use non-exec here, or defun-nx in place of
-; defun, when there is at least one stobj among fn-formals.  Either should be
-; fine, but we use non-exec to avoid complicating the redundancy check done for
-; this event when collect-non-redundant is called by
-; partial-functions-table-guard-msg, since defun-nx is a macro that does not
-; show up when get-event (called by collect-non-redundant) is returned.
-
-                    ,(let ((body
-                            `(,fn-limit ,@fn-formals
-                                        (nfix (,fn-limit-stable ,@fn-formals)))))
-                       (if stobjs
-                           `(non-exec ,body)
-                         body)))))
+                    (,fn-limit ,@fn-formals
+                               (nfix (non-exec
+                                      (,fn-limit-stable ,@fn-formals)))))))
             `(,fn ,fn-limit ,fn-limit-change ,fn-limit-stable ,def)))))))
 
 (defun memoize-partial-supporting-events-rec (tuples flet-bindings wrld msg
@@ -34746,8 +34871,8 @@
 
 ; See comment above for the case of 'state.
 
-                     (not (all-nils (stobjs-out key wrld))))
-                (let ((stobj (find-first-non-nil (stobjs-out key wrld))))
+                     (collect-non-nil-df (stobjs-out key wrld)))
+                (let ((stobj (car (collect-non-nil-df (stobjs-out key wrld)))))
                   (msg "~@0~x1 returns a stobj, ~x2 (illegal except for ~
                         profiling)."
                        str key stobj)))
@@ -34889,7 +35014,7 @@
                                           t)))
                       (val-guard (and condition
                                       (if (symbolp condition)
-                                          (getpropc condition 'guard *t* wrld)
+                                          (guard condition t wrld)
                                         t))))
 
                   (cond
@@ -34915,7 +35040,7 @@
                           condition function for ~x2, because the two ~
                           functions have different formal parameter lists."
                          str condition key))
-                   ((not (equal (getpropc key 'guard *t* wrld)
+                   ((not (equal (guard key t wrld)
                                 val-guard))
                     (msg "~@0Function ~x1 cannot serve as a memoization ~
                           condition function for ~x2, because the two ~
@@ -34924,22 +35049,23 @@
                    (t nil)))))))
         (progn$
          (and val
-              (let ((stobjs-in (stobjs-in key wrld)))
+              (let* ((stobjs-in (stobjs-in key wrld))
+                     (relevant-input-stobjs
+                      (and condition
+                           (collect-non-nil-df stobjs-in))))
                 (cond
-                 ((and condition
-                       (find-first-non-nil stobjs-in))
-                  (let ((input-stobjs (collect-non-x nil stobjs-in)))
-                    (observation-cw
-                     ctx
-                     "The function ~x0 has input stobj~#1~[~/s~] ~&1.  The ~
-                      memoization table for ~x0 will be cleared whenever ~
-                      ~#2~[this stobj is~/either of these stobjs is~/any of ~
-                      these stobjs is~] updated.  Any update of a stobj may ~
-                      therefore be significantly slower, perhaps by a factor ~
-                      of 5 or 10, when it is an input of a memoized function."
-                     key
-                     input-stobjs
-                     (zero-one-or-more (cdr input-stobjs)))))
+                 (relevant-input-stobjs
+                  (observation-cw
+                   ctx
+                   "The function ~x0 has input stobj~#1~[~/s~] ~&1.  The ~
+                    memoization table for ~x0 will be cleared whenever ~
+                    ~#2~[this stobj is~/either of these stobjs is~/any of ~
+                    these stobjs is~] updated.  Any update of a stobj may ~
+                    therefore be significantly slower, perhaps by a factor of ~
+                    5 or 10, when it is an input of a memoized function."
+                   key
+                   relevant-input-stobjs
+                   (zero-one-or-more (cdr relevant-input-stobjs))))
                  (t nil))))
          (if msg
              (mv nil msg)
@@ -35107,6 +35233,11 @@
               ,@(memoize-partial-calls tuples)))))))
 
 (defun read-event-data-fal (alist fal)
+
+; Extend the given fast-alist, fal, with the key-value pairs (key . val) in
+; alist, by including val in the list of values associated with key in the
+; resulting extension.
+
   (cond ((endp alist) fal)
         (t
          (let* ((key (caar alist))
@@ -35122,6 +35253,21 @@
         (t (car fal))))
 
 (defun old-and-new-event-data-fal (book-string dir ctx state)
+
+; An event-data-fal, as stored in the state global of that name, is an alist
+; whose entries are of two types.  If the key is an event name, then the value
+; is a list of event-data values (see :DOC get-event-data), often a singleton
+; list -- one for each event whose name is the key -- except that for a THM
+; event, the key is nil.  Otherwise the key is a full-book-string (a string
+; that is the canonical pathname for a book) and the value is the
+; event-data-fal based on the events in that book.
+
+; This function returns a pair (file-event-data-fal . new-event-data-fal),
+; where new-event-data-fal is the updated (by this function) value of state
+; global 'event-data-fal and file-event-data-fal is the event-data-fal
+; associated with book-string and with respect to directory dir, if non-nil,
+; else with respect to the current cbd.
+
   (let ((current-event-data-fal (f-get-global 'event-data-fal state)))
     (cond
      ((null current-event-data-fal)
@@ -35137,7 +35283,7 @@
            (cached (value (cons cached current-event-data-fal)))
            (t
             (let ((event-data-filename
-                   (event-data-filename full-book-string)))
+                   (event-data-filename full-book-string nil)))
               (with-packages-unhidden
                (mv-let (channel state)
                  (open-input-channel event-data-filename :object state)
@@ -35169,6 +35315,13 @@
                          event-data-filename))))))))))))))
 
 (defun old-and-new-event-data-fn (book-string name namep dir ctx state)
+
+; This function returns (old-event-data . new-event-date), where the car and
+; cdr are event-data values (see :DOC get-event-data) that are intended to
+; correspond, where new-event-data is the most recent event-data -- associated
+; with name, if namep is true -- and old-event-data is intended to be the
+; corresponding event-data from the current session.
+
   (er-let* ((old/new (old-and-new-event-data-fal book-string dir ctx state)))
     (let* ((old (car old/new))
            (new (cdr old/new))
@@ -35192,8 +35345,9 @@
               (value nil)))
             ((= new-len 0)
              (er soft ctx
-                 "No events named ~x0 were saved in the current session.  ~
-                  Thus no result is available."
+                 "No event-data ~#0~[was~/ for events named ~x1 were~] saved ~
+                  in the current session.  Thus no result is available."
+                 (if namep 1 0)
                  name))
             (t ; e.g., old = (e0 e1 e2 e3 ...), new = (f2 f3 ...)
              (value (cons (nth (- old-len new-len) old-event-data-lst)
@@ -35492,17 +35646,17 @@
 
 ; Consider for example a function call (f e0 e1 ...) that is translatable with
 ; respect to a.  Thus each ei can be translated according to the ith element of
-; the stobjs-in of f.  Thus, the arguments at non-nil stobjs-in positions must
-; be distinct stobj names each congruent to the stobjs-in value at its
-; position, and each of the other arguments must be terms that return a single
-; non-stobj value.
+; the stobjs-in of f.  Thus, the arguments at stobjs-in positions that are
+; neither nil nor :df must be distinct stobj names each congruent to the
+; stobjs-in value at its position, and each of the other arguments must be
+; terms that return a single non-stobj value.
 
 ; Definition.  The term-stobjs-out-set of an untranslated term u is the union
-; of the stobjs-out of all function symbols called in u, with nil removed and
-; with obvious exceptions: term-stobjs-out-set accounts for stobj-let (its
-; bound stobj is removed from stobjs-out of calls in its body) and
-; with-local-stobj (its producer-vars are removed from stobjs-out of calls in
-; the producer), and it is determined by the :values keyword in DO loop$
+; of the stobjs-out of all function symbols called in u, with nil and :df
+; removed and with obvious exceptions: term-stobjs-out-set accounts for
+; stobj-let (its bound stobj is removed from stobjs-out of calls in its body)
+; and with-local-stobj (its producer-vars are removed from stobjs-out of calls
+; in the producer), and it is determined by the :values keyword in DO loop$
 ; expressions.  Note that neither stobj-let nor with-local-stobj is allowed
 ; directly in the top-level loop, which simplifies the definition in those
 ; cases.  Note that calculation of term-stobjs-out-set may be awkward if apply$

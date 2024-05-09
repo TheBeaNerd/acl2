@@ -1,7 +1,7 @@
 ; Formal specification of the AES block cipher
 ;
 ; Copyright (C) 2008-2011 Eric Smith and Stanford University
-; Copyright (C) 2013-2023 Kestrel Institute
+; Copyright (C) 2013-2024 Kestrel Institute
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
 ;
@@ -33,26 +33,29 @@
 (local (in-theory (enable acl2::integerp-of-nth-when-bv-arrayp
                           acl2::<=-of-0-and-nth-when-bv-arrayp)))
 
-(defthm nonneg-of-nth-when-all-unsigned-byte-p
-  (implies (and (acl2::all-unsigned-byte-p size list)
-                (natp n)
-                (< n (len list)))
-           (<= 0 (nth n list)))
-  :hints (("Goal" :in-theory (enable nth))))
+(local
+ (defthm nonneg-of-nth-when-all-unsigned-byte-p
+   (implies (and (acl2::all-unsigned-byte-p size list)
+                 (natp n)
+                 (< n (len list)))
+            (<= 0 (nth n list)))
+   :hints (("Goal" :in-theory (enable nth)))))
 
-(defthm <-of-256-when-all-unsigned-byte-p
-  (implies (and (acl2::all-unsigned-byte-p 8 list)
-                (natp n)
-                (< n (len list)))
-           (< (nth n list) 256))
-  :hints (("Goal" :in-theory (enable nth acl2::all-unsigned-byte-p))))
+(local
+ (defthm <-of-256-when-all-unsigned-byte-p
+   (implies (and (acl2::all-unsigned-byte-p 8 list)
+                 (natp n)
+                 (< n (len list)))
+            (< (nth n list) 256))
+   :hints (("Goal" :in-theory (enable nth acl2::all-unsigned-byte-p)))))
 
-(defthm unsigned-byte-p-of-nth-when-all-unsigned-byte-p
+(local
+ (defthm unsigned-byte-p-of-nth-when-all-unsigned-byte-p
   (implies (and (acl2::all-unsigned-byte-p size list)
                 (natp n)
                 (< n (len list)))
            (unsigned-byte-p size (nth n list)))
-  :hints (("Goal" :in-theory (enable nth))))
+  :hints (("Goal" :in-theory (enable nth)))))
 
 (defthm 2d-bv-arrayp-of-reverse-list
   (implies (acl2::2d-bv-arrayp width numrows numcols array)
@@ -553,7 +556,7 @@
                 ;(< round 11)
                 )
            (statep (apply-round round state nk w)))
-  :hints (("Goal" :in-theory (e/d (apply-round) ()))))
+  :hints (("Goal" :in-theory (enable apply-round))))
 
 (defund apply-rounds (round max state nk w)
   (declare (xargs :guard (and (acl2::member nk '(4 6 8))
@@ -577,7 +580,7 @@
                 ;(< round 11)
                 )
            (statep (apply-rounds round max state nk w)))
-  :hints (("Goal" :in-theory (e/d (apply-rounds) ()))))
+  :hints (("Goal" :in-theory (enable apply-rounds))))
 
 (defund copyarraytostate (in)
   (declare (xargs :guard (byte-arrayp (* 4 *nb*) in)))
@@ -627,8 +630,8 @@
     state))
 
 (defthm statep-of-ciphercore
-  (implies  (aes::statep state)
-            (aes::statep (aes::cipher-core state w nk)))
+  (implies (aes::statep state)
+           (aes::statep (aes::cipher-core state w nk)))
   :hints (("Goal" :in-theory (enable AES::CIPHER-CORE))))
 
 ;W is the expanded key
@@ -810,7 +813,7 @@
                      ;(expanded-keyp (keyexpansion key nk) nk)
            (expanded-keyp (KEYEXPANSION KEY NK) nk))
   :hints (("Goal"    ;:expand (:free (x y) (KEYEXPANSIONLOOP2 x y))
-           :in-theory (e/d (keyexpansion (acl2::repeat)) ()))))
+           :in-theory (enable keyexpansion (:e acl2::repeat)))))
 
 ;prove that it returns the right type
 
@@ -843,7 +846,7 @@
                 ;(< round 11)
                 )
            (statep (invapply-round round state nk w)))
-  :hints (("Goal" :in-theory (e/d (invapply-round) ()))))
+  :hints (("Goal" :in-theory (enable invapply-round))))
 
 ;;todo: make tailrecursive?
 (defund invapply-rounds (currentround state w nk)
@@ -869,7 +872,7 @@
                 (acl2::member nk '(4 6 8))
                 )
            (statep (invapply-rounds round state w nk)))
-  :hints (("Goal" :in-theory (e/d (invapply-rounds) ()))))
+  :hints (("Goal" :in-theory (enable invapply-rounds))))
 
 (acl2::verify-guards invapply-rounds)
 
@@ -886,8 +889,8 @@
     state))
 
 (defthm statep-of-invciphercore
-  (implies  (aes::statep state)
-            (aes::statep (aes::invcipher-core state w nk)))
+  (implies (aes::statep state)
+           (aes::statep (aes::invcipher-core state w nk)))
   :hints (("Goal" :in-theory (enable aes::invcipher-core))))
 
 (defun invcipher (in w nk)

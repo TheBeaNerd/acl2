@@ -1,6 +1,6 @@
 ; A lightweight book about the built-in operation +.
 ;
-; Copyright (C) 2019-2023 Kestrel Institute
+; Copyright (C) 2019-2024 Kestrel Institute
 ;
 ; License: A 3-clause BSD license. See the file books/3BSD-mod.txt.
 ;
@@ -37,6 +37,7 @@
                   (integerp (fix y))))
   :rule-classes ((:rewrite :backchain-limit-lst (0))))
 
+;; TODO: Drop (see fold-consts-in-+)
 (defthm +-combine-constants
   (implies (syntaxp (and (quotep k2) ;tested first to fail fast
                          (quotep k1)))
@@ -164,6 +165,10 @@
   (equal (< x (+ y x))
          (< 0 y)))
 
+(defthm <-of-+-cancel-1-2+
+  (equal (< x (+ y x z))
+         (< 0 (+ y z))))
+
 (defthm <-of-+-cancel-1+-2+
   (equal (< (+ x w) (+ y x z))
          (< w (+ y z)))
@@ -180,6 +185,10 @@
 (defthm <-of-+-cancel-2-1+
   (equal (< (+ y x) (+ x z))
          (< y z)))
+
+(defthm <-of-+-cancel-3-1
+  (equal (< (+ y (+ z x)) x)
+         (< (+ y z) 0)))
 
 (defthm <-of-+-cancel-3-1+
   (equal (< (+ y y2 x) (+ x z))

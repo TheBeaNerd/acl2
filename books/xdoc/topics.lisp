@@ -591,7 +591,7 @@ Some examples:</p>
 to escape it.  You can write @('@@') to generate a single @('@') sign.</p>
 
 <p>Besides @('@(') and @('@@'), the preprocessor leaves any other uses of
-@('@') in tact.  So, most uses of @('@'), such as in email addresses, do not
+@('@') intact.  So, most uses of @('@'), such as in email addresses, do not
 need to be escaped.</p>")
 
 (defxdoc terminal
@@ -1815,7 +1815,8 @@ manual.</p>")
 
 ; Warning: Keep this in sync with *entity-strings* and
 ; *entitytok-as-plaintext-fal* in parse-xml.lisp, wrapXdocFragment in
-; fancy/xslt.js, and *xml-entity-stuff*in prepare-topic.lisp.
+; fancy/xslt.js, *xml-entity-stuff*in prepare-topic.lisp, and
+; wrap_xdoc_fragment in fancy/xdata2html.pl
 
   :parents (xdoc xdoc-tests)
   :short "HTML entity support in XDOC."
